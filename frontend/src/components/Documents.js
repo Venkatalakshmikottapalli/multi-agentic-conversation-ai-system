@@ -16,7 +16,6 @@ const Documents = () => {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [ragStats, setRagStats] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -28,14 +27,11 @@ const Documents = () => {
 
   const loadRagStats = async () => {
     try {
-      setLoading(true);
       const response = await docAPI.getRagStats();
       setRagStats(response.data);
     } catch (error) {
       console.error('Error loading RAG stats:', error);
       setError('Failed to load document statistics');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -69,7 +65,7 @@ const Documents = () => {
       setError(null);
       setSuccess(null);
       
-      const response = await docAPI.uploadDocuments(selectedFiles);
+      await docAPI.uploadDocuments(selectedFiles);
       
       setSuccess(`Successfully uploaded ${selectedFiles.length} file(s)`);
       setSelectedFiles([]);
@@ -89,7 +85,6 @@ const Documents = () => {
 
   const handleClearData = async () => {
     try {
-      setLoading(true);
       await docAPI.clearRagData();
       setSuccess('Document collection cleared successfully');
       setShowClearConfirm(false);
@@ -97,8 +92,6 @@ const Documents = () => {
     } catch (error) {
       console.error('Error clearing RAG data:', error);
       setError('Failed to clear document collection');
-    } finally {
-      setLoading(false);
     }
   };
 

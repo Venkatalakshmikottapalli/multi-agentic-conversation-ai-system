@@ -28,7 +28,6 @@ const Analytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRange] = useState('7d');
   const [selectedUser, setSelectedUser] = useState(null);
   const [users, setUsers] = useState([]);
 
