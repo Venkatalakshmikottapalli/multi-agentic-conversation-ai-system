@@ -5,9 +5,12 @@ set -e
 
 echo "🚀 Starting build process..."
 
+# Upgrade pip and install build tools first
+echo "🔧 Upgrading pip and installing build tools..."
+pip install --upgrade pip setuptools wheel
+
 # Install Python dependencies
 echo "📦 Installing Python dependencies..."
-pip install --upgrade pip
 pip install -r requirements.txt
 
 # Install Node.js dependencies and build frontend
