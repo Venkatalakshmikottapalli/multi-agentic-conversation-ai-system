@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: hackathon-agent
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "./start.sh"
+    healthCheckPath: /health
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./crm_chatbot.db
+      - key: CHROMA_DB_PATH
+        value: ./chroma_db
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 10000
+      - key: DEBUG
+        value: false
+      - key: PYTHONUNBUFFERED
+        value: 1
+    autoDeploy: true
+    disk:
+      name: hackathon-agent-disk
+      mountPath: /opt/render/project/src
+      sizeGB: 1 
