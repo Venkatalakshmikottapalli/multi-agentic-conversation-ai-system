@@ -32,8 +32,9 @@ venv.bak/
 *.sqlite3
 crm_chatbot.db
 
-# ChromaDB
+# Vector Database
 chroma_db/
+faiss_vector_db/
 
 # Environment variables
 .env

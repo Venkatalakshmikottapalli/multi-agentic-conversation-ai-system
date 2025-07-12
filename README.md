@@ -26,7 +26,7 @@ A comprehensive end-to-end chatbot system with Retrieval-Augmented Generation (R
 - **FastAPI**: High-performance async REST API
 - **React 18**: Modern frontend framework with hooks
 - **OpenAI GPT-4**: Advanced language model integration
-- **ChromaDB**: Vector database for efficient document retrieval
+- **FAISS**: Vector database for efficient document retrieval
 - **SQLite**: Lightweight database for CRM data
 - **Tailwind CSS**: Utility-first CSS framework
 - **Multi-Agent System**: Intelligent agent selection based on context
@@ -48,7 +48,7 @@ graph TB
     ChatAgent --> CRMAgent[CRM Agent]
     ChatAgent --> GeneralAgent[General Agent]
     
-    RAG --> ChromaDB[ChromaDB Vector Store]
+    RAG --> FAISS[FAISS Vector Store]
     RAG --> Embeddings[Sentence Transformers]
     
     CRM --> SQLite[SQLite Database]
@@ -584,7 +584,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - OpenAI for GPT-4 language model
-- ChromaDB for vector database
+- FAISS for vector database
 - FastAPI for the excellent backend framework
 - React and the frontend ecosystem
 - All contributors and testers
