@@ -16,8 +16,8 @@ chromadb==0.3.29
 langchain==0.0.340
 langchain-openai==0.0.2
 
-# Sentence transformers - CPU only version to avoid compilation issues
-sentence-transformers==2.2.2
+# Sentence transformers - using available version
+sentence-transformers==2.3.0
 
 # HTTP and file handling
 python-multipart==0.0.6
@@ -43,7 +43,11 @@ aiofiles==23.2.1
 typing-extensions==4.8.0
 gunicorn==21.2.0
 
-# Dependencies for embeddings
+# Dependencies for embeddings - compatible versions
 transformers==4.35.2
 torch==2.1.1
 tqdm==4.66.1
+
+# Additional ML dependencies
+scikit-learn==1.3.2
+huggingface-hub==0.17.3
