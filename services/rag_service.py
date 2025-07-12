@@ -1,11 +1,12 @@
 import os
 import logging
 from typing import List, Dict, Any, Optional
-import chromadb
-from chromadb.config import Settings
+import faiss
+import numpy as np
+import pickle
+import json
 from sentence_transformers import SentenceTransformer
 import pandas as pd
-import json
 from datetime import datetime
 from config import settings
 from models.crm_models import Document
@@ -14,40 +15,89 @@ from database import get_db_context
 logger = logging.getLogger(__name__)
 
 class RAGService:
-    """RAG service for document processing and retrieval."""
+    """RAG service for document processing and retrieval using FAISS."""
     
     def __init__(self):
-        self.chroma_client = None
-        self.collection = None
+        self.faiss_index = None
+        self.documents = []
+        self.metadatas = []
         self.embedding_model = None
+        self.vector_db_path = None
         self.initialize()
     
     def initialize(self):
         """Initialize the RAG service."""
         try:
-            # Initialize ChromaDB
-            self.chroma_client = chromadb.PersistentClient(
-                path=settings.chroma_db_path,
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
-            )
-            
-            # Get or create collection
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="knowledge_base",
-                metadata={"hnsw:space": "cosine"}
-            )
-            
             # Initialize embedding model
             self.embedding_model = SentenceTransformer(settings.embedding_model)
             
-            logger.info("RAG service initialized successfully")
+            # Set up vector database path
+            self.vector_db_path = os.path.join(settings.chroma_db_path, "faiss_vector_db")
+            os.makedirs(self.vector_db_path, exist_ok=True)
+            
+            # Load existing index if available
+            self._load_index()
+            
+            logger.info("RAG service initialized successfully with FAISS")
             
         except Exception as e:
             logger.error(f"Failed to initialize RAG service: {e}")
             raise
+    
+    def _load_index(self):
+        """Load existing FAISS index and metadata."""
+        try:
+            index_path = os.path.join(self.vector_db_path, "faiss.index")
+            metadata_path = os.path.join(self.vector_db_path, "metadata.pkl")
+            documents_path = os.path.join(self.vector_db_path, "documents.pkl")
+            
+            if os.path.exists(index_path) and os.path.exists(metadata_path) and os.path.exists(documents_path):
+                # Load FAISS index
+                self.faiss_index = faiss.read_index(index_path)
+                
+                # Load metadata and documents
+                with open(metadata_path, 'rb') as f:
+                    self.metadatas = pickle.load(f)
+                
+                with open(documents_path, 'rb') as f:
+                    self.documents = pickle.load(f)
+                
+                logger.info(f"Loaded existing index with {len(self.documents)} documents")
+            else:
+                # Create new index
+                embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+                self.faiss_index = faiss.IndexFlatIP(embedding_dim)  # Inner product for cosine similarity
+                self.documents = []
+                self.metadatas = []
+                logger.info("Created new FAISS index")
+                
+        except Exception as e:
+            logger.error(f"Error loading index: {e}")
+            # Create new index on error
+            embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+            self.faiss_index = faiss.IndexFlatIP(embedding_dim)
+            self.documents = []
+            self.metadatas = []
+    
+    def _save_index(self):
+        """Save FAISS index and metadata."""
+        try:
+            index_path = os.path.join(self.vector_db_path, "faiss.index")
+            metadata_path = os.path.join(self.vector_db_path, "metadata.pkl")
+            documents_path = os.path.join(self.vector_db_path, "documents.pkl")
+            
+            # Save FAISS index
+            faiss.write_index(self.faiss_index, index_path)
+            
+            # Save metadata and documents
+            with open(metadata_path, 'wb') as f:
+                pickle.dump(self.metadatas, f)
+            
+            with open(documents_path, 'wb') as f:
+                pickle.dump(self.documents, f)
+                
+        except Exception as e:
+            logger.error(f"Error saving index: {e}")
     
     def process_document(self, content: str, filename: str, content_type: str, 
                         metadata: Optional[Dict[str, Any]] = None) -> str:
@@ -60,16 +110,15 @@ class RAGService:
             chunks = self._split_text(content)
             
             # Create embeddings and store in vector database
-            chunk_ids = []
             chunk_texts = []
             chunk_metadata = []
             
             for i, chunk in enumerate(chunks):
                 chunk_id = f"{doc_id}_chunk_{i}"
-                chunk_ids.append(chunk_id)
                 chunk_texts.append(chunk)
                 
                 chunk_meta = {
+                    "id": chunk_id,
                     "filename": filename,
                     "content_type": content_type,
                     "chunk_index": i,
@@ -82,12 +131,21 @@ class RAGService:
                 
                 chunk_metadata.append(chunk_meta)
             
-            # Add to ChromaDB
-            self.collection.add(
-                documents=chunk_texts,
-                ids=chunk_ids,
-                metadatas=chunk_metadata
-            )
+            # Generate embeddings
+            embeddings = self.embedding_model.encode(chunk_texts)
+            
+            # Normalize embeddings for cosine similarity
+            faiss.normalize_L2(embeddings)
+            
+            # Add to FAISS index
+            self.faiss_index.add(embeddings)
+            
+            # Store documents and metadata
+            self.documents.extend(chunk_texts)
+            self.metadatas.extend(chunk_metadata)
+            
+            # Save index
+            self._save_index()
             
             # Store document in database
             with get_db_context() as db:
@@ -143,21 +201,25 @@ class RAGService:
             if n_results is None:
                 n_results = settings.max_retrieval_docs
             
-            # Query the vector database
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=n_results,
-                include=["documents", "metadatas", "distances"]
-            )
+            if self.faiss_index.ntotal == 0:
+                logger.warning("No documents in index")
+                return []
+            
+            # Generate query embedding
+            query_embedding = self.embedding_model.encode([query])
+            faiss.normalize_L2(query_embedding)
+            
+            # Search in FAISS index
+            scores, indices = self.faiss_index.search(query_embedding, min(n_results, self.faiss_index.ntotal))
             
             # Format results
             retrieved_docs = []
-            if results['documents'] and results['documents'][0]:
-                for i, doc in enumerate(results['documents'][0]):
+            for i, idx in enumerate(indices[0]):
+                if idx != -1:  # Valid index
                     retrieved_docs.append({
-                        "content": doc,
-                        "metadata": results['metadatas'][0][i],
-                        "similarity_score": 1 - results['distances'][0][i]  # Convert distance to similarity
+                        "content": self.documents[idx],
+                        "metadata": self.metadatas[idx],
+                        "similarity_score": float(scores[0][i])  # FAISS returns similarity scores
                     })
             
             logger.info(f"Retrieved {len(retrieved_docs)} documents for query: {query[:100]}...")
@@ -203,75 +265,65 @@ class RAGService:
         return chunks
     
     def _create_property_description(self, row: pd.Series) -> str:
-        """Create a readable description from property data."""
+        """Create a readable description of a property from CSV row."""
         try:
-            description = f"Property at {row.get('Property Address', 'Unknown Address')}"
+            # Create a comprehensive description
+            description_parts = []
             
-            if pd.notna(row.get('Floor')):
-                description += f" on floor {row.get('Floor')}"
+            # Add property basics
+            if 'Property Type' in row and pd.notna(row['Property Type']):
+                description_parts.append(f"This is a {row['Property Type']}")
             
-            if pd.notna(row.get('Suite')):
-                description += f", suite {row.get('Suite')}"
+            if 'Location' in row and pd.notna(row['Location']):
+                description_parts.append(f"located in {row['Location']}")
             
-            if pd.notna(row.get('Size (SF)')):
-                description += f". Size: {row.get('Size (SF)')} square feet"
+            if 'Price' in row and pd.notna(row['Price']):
+                description_parts.append(f"priced at {row['Price']}")
             
-            if pd.notna(row.get('Rent/SF/Year')):
-                rent = str(row.get('Rent/SF/Year')).replace('$', '').replace(',', '')
-                description += f". Rent: ${rent} per square foot per year"
+            # Add features
+            features = []
+            for col in row.index:
+                if col not in ['Property Type', 'Location', 'Price'] and pd.notna(row[col]):
+                    features.append(f"{col}: {row[col]}")
             
-            if pd.notna(row.get('Annual Rent')):
-                description += f". Annual rent: {row.get('Annual Rent')}"
+            if features:
+                description_parts.append(f"Features include: {', '.join(features)}")
             
-            if pd.notna(row.get('Monthly Rent')):
-                description += f". Monthly rent: {row.get('Monthly Rent')}"
-            
-            # Add broker information
-            if pd.notna(row.get('Associate 1')):
-                description += f". Primary broker: {row.get('Associate 1')}"
-            
-            if pd.notna(row.get('BROKER Email ID')):
-                description += f". Broker email: {row.get('BROKER Email ID')}"
-            
-            # Add additional associates
-            associates = []
-            for i in range(2, 5):
-                associate_col = f'Associate {i}'
-                if pd.notna(row.get(associate_col)):
-                    associates.append(row.get(associate_col))
-            
-            if associates:
-                description += f". Additional associates: {', '.join(associates)}"
-            
-            return description
+            return ". ".join(description_parts) + "."
             
         except Exception as e:
             logger.error(f"Error creating property description: {e}")
-            return f"Property data: {row.to_dict()}"
+            return str(row.to_dict())
     
     def get_collection_stats(self) -> Dict[str, Any]:
-        """Get statistics about the document collection."""
+        """Get statistics about the collection."""
         try:
-            count = self.collection.count()
             return {
-                "total_documents": count,
-                "collection_name": "knowledge_base",
-                "embedding_model": settings.embedding_model
+                "total_documents": len(self.documents),
+                "total_vectors": self.faiss_index.ntotal if self.faiss_index else 0,
+                "embedding_dimension": self.embedding_model.get_sentence_embedding_dimension(),
+                "index_type": "FAISS IndexFlatIP"
             }
         except Exception as e:
             logger.error(f"Error getting collection stats: {e}")
-            return {"error": str(e)}
+            return {}
     
     def clear_collection(self):
         """Clear all documents from the collection."""
         try:
-            # Delete collection and recreate
-            self.chroma_client.delete_collection("knowledge_base")
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="knowledge_base",
-                metadata={"hnsw:space": "cosine"}
-            )
+            # Reset FAISS index
+            embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+            self.faiss_index = faiss.IndexFlatIP(embedding_dim)
+            
+            # Clear documents and metadata
+            self.documents = []
+            self.metadatas = []
+            
+            # Save empty index
+            self._save_index()
+            
             logger.info("Collection cleared successfully")
+            
         except Exception as e:
             logger.error(f"Error clearing collection: {e}")
             raise
