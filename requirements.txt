@@ -9,9 +9,8 @@ sqlalchemy>=2.0.0
 pydantic>=2.5.0
 openai>=1.6.1
 
-# Vector database alternatives - lightweight and no Rust dependencies
+# Vector database - FAISS for efficient similarity search
 faiss-cpu>=1.7.0
-annoy>=1.17.0
 
 # LangChain dependencies - updated versions
 langchain>=0.1.0
