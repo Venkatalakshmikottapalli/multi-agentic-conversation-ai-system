@@ -5,13 +5,18 @@ set -e
 
 echo "🚀 Starting build process..."
 
+# Set environment variables to avoid Rust compilation
+export CARGO_NET_OFFLINE=true
+export PIP_ONLY_BINARY=:all:
+export DISABLE_AUTOBREW=1
+
 # Upgrade pip and install build tools first
 echo "🔧 Upgrading pip and installing build tools..."
 pip install --upgrade pip setuptools wheel
 
-# Install Python dependencies
+# Install Python dependencies with flags to avoid compilation
 echo "📦 Installing Python dependencies..."
-pip install -r requirements.txt
+pip install -r requirements.txt --only-binary=all --no-compile
 
 # Install Node.js dependencies and build frontend
 echo "🔧 Building frontend..."
