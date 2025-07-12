@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Settings as SettingsIcon, 
   Save, 
   RefreshCw, 
   AlertCircle,
@@ -9,7 +8,6 @@ import {
   Info,
   Database,
   MessageSquare,
-  Shield,
   Monitor
 } from 'lucide-react';
 import { systemAPI } from '../services/api';

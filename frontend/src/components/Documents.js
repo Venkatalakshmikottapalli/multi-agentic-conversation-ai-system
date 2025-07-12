@@ -3,13 +3,11 @@ import {
   Upload, 
   FileText, 
   Trash2, 
-  Download, 
   RefreshCw,
   AlertCircle,
   CheckCircle,
   X,
   Database,
-  Eye,
   Info
 } from 'lucide-react';
 import { docAPI } from '../services/api';
@@ -17,7 +15,6 @@ import { docAPI } from '../services/api';
 const Documents = () => {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [ragStats, setRagStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

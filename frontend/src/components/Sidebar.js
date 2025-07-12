@@ -7,7 +7,6 @@ import {
   FileText, 
   Settings, 
   X,
-  Plus,
   Search
 } from 'lucide-react';
 import { crmAPI } from '../services/api';

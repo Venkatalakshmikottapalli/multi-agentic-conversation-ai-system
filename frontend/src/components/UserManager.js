@@ -1,16 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Search, 
   Edit, 
   Trash2, 
   User, 
-  Mail, 
-  Phone, 
-  Building, 
   UserCheck,
   MessageSquare,
-  Calendar,
   X
 } from 'lucide-react';
 import { crmAPI } from '../services/api';
@@ -30,11 +26,7 @@ const UserManager = () => {
   });
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadUsers();
-  }, [pagination.page]);
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
       const response = await crmAPI.getUsers(pagination.page, pagination.per_page);
@@ -50,7 +42,11 @@ const UserManager = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.per_page]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const handleCreateUser = async (userData) => {
     try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -19,7 +19,6 @@ import {
   Users, 
   MessageSquare, 
   Calendar,
-  Filter,
   Download,
   RefreshCw
 } from 'lucide-react';
@@ -29,16 +28,11 @@ const Analytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeRange, setTimeRange] = useState('7d');
+  const [timeRange] = useState('7d');
   const [selectedUser, setSelectedUser] = useState(null);
   const [users, setUsers] = useState([]);
 
-  useEffect(() => {
-    loadAnalytics();
-    loadUsers();
-  }, [selectedUser, timeRange]);
-
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       setLoading(true);
       const response = await crmAPI.getAnalytics(selectedUser);
@@ -49,16 +43,21 @@ const Analytics = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedUser]);
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     try {
       const response = await crmAPI.getUsers(1, 50);
       setUsers(response.data || []);
     } catch (error) {
       console.error('Error loading users:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadAnalytics();
+    loadUsers();
+  }, [loadAnalytics, loadUsers]);
 
   const refreshAnalytics = () => {
     loadAnalytics();

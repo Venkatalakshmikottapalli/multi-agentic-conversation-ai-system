@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, User, Bot, Loader2, Plus, RotateCcw, AlertCircle } from 'lucide-react';
-import { chatAPI, crmAPI } from '../services/api';
+import { chatAPI } from '../services/api';
 
 // Move MessageBubble outside main component and memoize it
 const MessageBubble = React.memo(({ message }) => {
