@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Multi-Agent Conversational AI System
 
 A comprehensive end-to-end chatbot system with Retrieval-Augmented Generation (RAG) and Customer Relationship Management (CRM) capabilities built with FastAPI, React, OpenAI GPT, and advanced multi-agent architecture.
@@ -592,4 +593,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Built with ❤️ for intelligent customer relationship management**
 
-For more detailed information, check the individual README files in the `frontend/` directory and the API documentation at `/docs` when the server is running. 
+For more detailed information, check the individual README files in the `frontend/` directory and the API documentation at `/docs` when the server is running.
