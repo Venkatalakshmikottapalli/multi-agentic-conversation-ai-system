@@ -1,0 +1,207 @@
+{
+  "conversation_id": "conv-sample-001",
+  "user_id": "user-demo-123",
+  "session_id": "session-demo-456",
+  "title": "Real Estate Inquiry and CRM Interaction",
+  "category": "real_estate",
+  "status": "active",
+  "created_at": "2024-01-15T10:00:00Z",
+  "updated_at": "2024-01-15T10:15:00Z",
+  "messages": [
+    {
+      "id": "msg-001",
+      "role": "user",
+      "content": "Hello, I'm looking for office space in Manhattan for my tech startup.",
+      "timestamp": "2024-01-15T10:00:00Z",
+      "metadata": {
+        "intent": "greeting_inquiry",
+        "keywords": ["office", "space", "Manhattan", "tech", "startup"]
+      }
+    },
+    {
+      "id": "msg-002",
+      "role": "assistant",
+      "content": "Hello! I'd be happy to help you find office space in Manhattan for your tech startup. I'm specialized in commercial real estate and can assist you with finding the perfect location. \n\nBased on our available properties, I have several excellent options in Manhattan that would be suitable for a tech startup. Let me share some details:\n\n**Available Properties:**\n\n1. **36 W 36th St, Floor E3, Suite 300**\n   - Size: 18,650 sq ft\n   - Rent: $87/sq ft per year\n   - Annual Rent: $1,622,550\n   - Monthly Rent: $135,213\n   - Primary Broker: Hector Barbossa (test1@okadaco.com)\n\n2. **15 W 38th St, Floor E3, Suite 300**\n   - Size: 17,260 sq ft\n   - Rent: $109/sq ft per year\n   - Annual Rent: $1,881,340\n   - Monthly Rent: $156,778\n   - Primary Broker: Joshamee Gibbs (test1@okadaco.com)\n\nWhat size office are you looking for, and do you have a specific budget range in mind?",
+      "timestamp": "2024-01-15T10:00:05Z",
+      "metadata": {
+        "agent_used": "Real Estate Specialist",
+        "rag_sources": [
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 36 W 36th St on floor E3, suite 300. Size: 18650 square feet. Rent: $87 per square foot per year...",
+            "similarity_score": 0.92
+          },
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 15 W 38th St on floor E3, suite 300. Size: 17260 square feet. Rent: $109 per square foot per year...",
+            "similarity_score": 0.89
+          }
+        ],
+        "processing_time": 1.2,
+        "rag_documents_found": 5
+      }
+    },
+    {
+      "id": "msg-003",
+      "role": "user",
+      "content": "Those are quite large spaces. We're a smaller startup, looking for something around 5,000-8,000 sq ft. Also, my name is Alex Johnson and I'm the CEO of TechFlow Solutions. You can reach me at alex@techflow.com if you have any updates.",
+      "timestamp": "2024-01-15T10:02:00Z",
+      "metadata": {
+        "intent": "size_preference_and_contact_info",
+        "keywords": ["smaller", "5000", "8000", "sq ft", "CEO", "TechFlow Solutions"]
+      }
+    },
+    {
+      "id": "msg-004",
+      "role": "assistant",
+      "content": "Thank you for that information, Alex! I've noted your details:\n\n- **Name:** Alex Johnson\n- **Company:** TechFlow Solutions\n- **Role:** CEO\n- **Email:** alex@techflow.com\n- **Space Requirements:** 5,000-8,000 sq ft\n\nI'll make sure to update your preferences in our system. Now, let me find some properties that better match your size requirements.\n\nUnfortunately, most of our current Manhattan listings are larger spaces. However, I do have a few options that might work:\n\n**Smaller Available Properties:**\n\n1. **9 Times Sq, Floor P3, Suite 3B**\n   - Size: 9,740 sq ft (slightly over your range but close)\n   - Rent: $100/sq ft per year\n   - Annual Rent: $974,000\n   - Monthly Rent: $81,167\n   - Primary Broker: Will Turner (test1@okadaco.com)\n\n2. **552 Seventh Ave, Floor E5, Suite 500**\n   - Size: 10,829 sq ft (a bit larger but in a prime location)\n   - Rent: $91/sq ft per year\n   - Annual Rent: $985,439\n   - Monthly Rent: $82,120\n   - Primary Broker: Cutler Beckett (test1@okadaco.com)\n\nWould you like me to reach out to other brokers to see if we have any smaller spaces coming available soon? I can also keep you updated on new listings that match your criteria.",
+      "timestamp": "2024-01-15T10:02:08Z",
+      "metadata": {
+        "agent_used": "CRM Assistant",
+        "user_info_extracted": {
+          "name": "Alex Johnson",
+          "email": "alex@techflow.com",
+          "company": "TechFlow Solutions",
+          "role": "CEO",
+          "preferences": {
+            "space_size": "5000-8000 sq ft",
+            "property_type": "office",
+            "location": "Manhattan"
+          }
+        },
+        "rag_sources": [
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 9 Times Sq on floor P3, suite 3B. Size: 9740 square feet. Rent: $100 per square foot per year...",
+            "similarity_score": 0.88
+          }
+        ],
+        "processing_time": 1.5
+      }
+    },
+    {
+      "id": "msg-005",
+      "role": "user",
+      "content": "The Times Square location sounds interesting. Can you tell me more about that property and the area? Also, what's the typical lease term for these spaces?",
+      "timestamp": "2024-01-15T10:05:00Z",
+      "metadata": {
+        "intent": "property_details_inquiry",
+        "keywords": ["Times Square", "property", "area", "lease term"]
+      }
+    },
+    {
+      "id": "msg-006",
+      "role": "assistant",
+      "content": "Great choice! The Times Square location is excellent for a tech startup. Here are the complete details:\n\n**9 Times Square, Floor P3, Suite 3B**\n- **Size:** 9,740 sq ft\n- **Rent:** $100/sq ft per year\n- **Annual Rent:** $974,000\n- **Monthly Rent:** $81,167\n- **Primary Broker:** Will Turner (test1@okadaco.com)\n- **Additional Associates:** Sansa Stark, Brenda Sparks, Lando Norris\n\n**Location Benefits:**\n- Prime Manhattan location in the heart of Times Square\n- Excellent public transportation access (multiple subway lines)\n- Close to restaurants, hotels, and entertainment venues\n- High visibility and prestigious address for your company\n- Great for client meetings and employee commuting\n\n**Typical Lease Terms:**\nWhile I don't have the specific lease terms in my current data, commercial office leases in Manhattan typically range from 3-10 years, with 5-year terms being most common for spaces this size. The lease terms often include:\n- Base rent plus additional charges (utilities, maintenance, taxes)\n- Possible rent escalations (2-3% annually)\n- Security deposit (usually 1-3 months)\n- Tenant improvement allowances may be negotiable\n\nI'd recommend contacting Will Turner directly at test1@okadaco.com to discuss:\n- Specific lease terms and flexibility\n- Tenant improvement allowances\n- Move-in timeline\n- Any current incentives or promotions\n\nWould you like me to connect you with Will Turner, or do you have any other questions about this property?",
+      "timestamp": "2024-01-15T10:05:12Z",
+      "metadata": {
+        "agent_used": "Real Estate Specialist",
+        "rag_sources": [
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 9 Times Sq on floor P3, suite 3B. Size: 9740 square feet. Rent: $100 per square foot per year. Monthly rent: $81,167. Primary broker: Will Turner. Broker email: test1@okadaco.com. Additional associates: Sansa Stark, Brenda Sparks, Lando Norris.",
+            "similarity_score": 0.95
+          }
+        ],
+        "processing_time": 1.1
+      }
+    },
+    {
+      "id": "msg-007",
+      "role": "user",
+      "content": "Yes, please connect me with Will Turner. Also, could you schedule a viewing for next week if possible? I'd like to see the space before making any decisions.",
+      "timestamp": "2024-01-15T10:07:00Z",
+      "metadata": {
+        "intent": "broker_connection_and_scheduling",
+        "keywords": ["connect", "Will Turner", "schedule", "viewing", "next week"]
+      }
+    },
+    {
+      "id": "msg-008",
+      "role": "assistant",
+      "content": "Absolutely! I'll help you connect with Will Turner and coordinate the viewing.\n\n**Next Steps:**\n1. **Broker Contact:** Will Turner - test1@okadaco.com\n2. **Property:** 9 Times Square, Floor P3, Suite 3B (9,740 sq ft)\n3. **Your Information:** Alex Johnson, CEO of TechFlow Solutions (alex@techflow.com)\n\n**For the Property Viewing:**\nI'll need to have Will Turner reach out to you directly since brokers typically handle their own scheduling. Here's what I recommend:\n\n1. **Email Will Turner at test1@okadaco.com** with:\n   - Your interest in viewing 9 Times Square, Suite 3B\n   - Your preferred dates/times for next week\n   - Your contact information and company details\n   - Any specific questions about the space\n\n2. **Alternative:** Call the main office and ask for Will Turner's direct line\n\n**I've Updated Your Profile:**\n- ✅ Contact: alex@techflow.com\n- ✅ Company: TechFlow Solutions\n- ✅ Role: CEO\n- ✅ Space Requirements: 5,000-8,000 sq ft\n- ✅ Preferred Location: Manhattan\n- ✅ Interested Property: 9 Times Square, Suite 3B\n- ✅ Status: Requesting viewing for next week\n\n**Additional Support:**\nYou can also contact the other team members associated with this property:\n- Sansa Stark\n- Brenda Sparks\n- Lando Norris\n\nIs there anything else I can help you with regarding this property or other real estate needs?",
+      "timestamp": "2024-01-15T10:07:15Z",
+      "metadata": {
+        "agent_used": "CRM Assistant",
+        "conversation_status": "active_lead",
+        "user_preferences_updated": {
+          "interested_property": "9 Times Square, Suite 3B",
+          "status": "requesting_viewing",
+          "viewing_timeframe": "next week"
+        },
+        "processing_time": 0.9
+      }
+    },
+    {
+      "id": "msg-009",
+      "role": "user",
+      "content": "That's perfect! Thank you for all your help. I'll reach out to Will Turner today. One last question - do you have any other similar properties as backup options?",
+      "timestamp": "2024-01-15T10:10:00Z",
+      "metadata": {
+        "intent": "backup_options_inquiry",
+        "keywords": ["backup", "similar properties", "other"]
+      }
+    },
+    {
+      "id": "msg-010",
+      "role": "assistant",
+      "content": "You're very welcome, Alex! I'm glad I could help. Here are some excellent backup options that are similar in size and location:\n\n**Backup Properties (Similar Size & Quality):**\n\n1. **145 E 32nd St, Floor E11, Suite 1100**\n   - Size: 13,375 sq ft (larger but good value)\n   - Rent: $85/sq ft per year\n   - Annual Rent: $1,136,875\n   - Monthly Rent: $94,740\n   - Primary Broker: Bootstrap Bill (test1@okadaco.com)\n\n2. **25 E 21st St, Floor E10, Suite 1000**\n   - Size: 10,614 sq ft (closer to your range)\n   - Rent: $104/sq ft per year\n   - Annual Rent: $1,103,856\n   - Monthly Rent: $91,988\n   - Primary Broker: Elizabeth Swann (test2@okadaco.com)\n\n3. **99 University Pl, Floor E6, Suite 600**\n   - Size: 9,814 sq ft (perfect size match)\n   - Rent: $83/sq ft per year\n   - Annual Rent: $814,562\n   - Monthly Rent: $67,880\n   - Primary Broker: Tia Dalma (test1@okadaco.com)\n\n**Summary for Your Reference:**\n- **Primary Choice:** 9 Times Square, Suite 3B - Will Turner (test1@okadaco.com)\n- **Best Value Backup:** 99 University Pl, Suite 600 - Lower rent at $83/sq ft\n- **Size Flexible:** 145 E 32nd St, Suite 1100 - Larger space, good rate\n\nI've saved all these options in your profile. Feel free to reach out if you need any additional information or want to explore more properties!\n\nGood luck with your viewing, and I hope you find the perfect space for TechFlow Solutions! 🏢",
+      "timestamp": "2024-01-15T10:10:18Z",
+      "metadata": {
+        "agent_used": "Real Estate Specialist",
+        "conversation_status": "satisfied_with_options",
+        "backup_properties_provided": [
+          "145 E 32nd St, Suite 1100",
+          "25 E 21st St, Suite 1000",
+          "99 University Pl, Suite 600"
+        ],
+        "rag_sources": [
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 145 E 32nd St on floor E11, suite 1100. Size: 13375 square feet. Rent: $85 per square foot per year...",
+            "similarity_score": 0.87
+          },
+          {
+            "source": "HackathonInternalKnowledgeBase.csv",
+            "content": "Property at 25 E 21st St on floor E10, suite 1000. Size: 10614 square feet. Rent: $104 per square foot per year...",
+            "similarity_score": 0.86
+          }
+        ],
+        "processing_time": 1.3
+      }
+    }
+  ],
+  "conversation_summary": {
+    "total_messages": 10,
+    "user_messages": 5,
+    "assistant_messages": 5,
+    "agents_used": ["Real Estate Specialist", "CRM Assistant"],
+    "user_information_captured": {
+      "name": "Alex Johnson",
+      "email": "alex@techflow.com",
+      "company": "TechFlow Solutions",
+      "role": "CEO",
+      "preferences": {
+        "space_size": "5000-8000 sq ft",
+        "property_type": "office",
+        "location": "Manhattan",
+        "interested_property": "9 Times Square, Suite 3B"
+      }
+    },
+    "properties_discussed": [
+      "36 W 36th St, Suite 300",
+      "15 W 38th St, Suite 300",
+      "9 Times Square, Suite 3B",
+      "552 Seventh Ave, Suite 500",
+      "145 E 32nd St, Suite 1100",
+      "25 E 21st St, Suite 1000",
+      "99 University Pl, Suite 600"
+    ],
+    "outcome": "User interested in primary property, backup options provided, broker contact information shared",
+    "next_steps": [
+      "User to contact Will Turner for viewing",
+      "Schedule property viewing for next week",
+      "Follow up on viewing results"
+    ]
+  }
+} 
