@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Send, User, Bot, Loader2, Plus, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,6 +45,7 @@ const MessageBubble = React.memo(({ message }) => {
           )}
           
           <div className="flex-1">
+<<<<<<< HEAD
             <div className="text-sm prose prose-sm max-w-none">
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm]}
@@ -104,6 +106,11 @@ const MessageBubble = React.memo(({ message }) => {
               </ReactMarkdown>
             </div>
             
+=======
+            <div className="text-sm whitespace-pre-wrap">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
+>>>>>>> 086cb5005f6ade5c1f4b699d23efa7417090e047
             {message.metadata && (
               <div className="mt-2 text-xs opacity-75">
                 Agent: {message.metadata.agent_used}
@@ -114,7 +121,6 @@ const MessageBubble = React.memo(({ message }) => {
                 )}
               </div>
             )}
-            
             {message.sources && message.sources.length > 0 && (
               <div className="mt-2 text-xs">
                 <div className="font-medium">Sources:</div>
@@ -125,7 +131,6 @@ const MessageBubble = React.memo(({ message }) => {
                 ))}
               </div>
             )}
-            
             <div className="mt-2 text-xs opacity-50">
               {formatTime(message.timestamp)}
             </div>
