@@ -1,6 +1,6 @@
 # CRM Chatbot Frontend
 
-A modern React-based frontend for the Multi-Agent Conversational AI CRM System. This interface provides a comprehensive dashboard for managing conversations, users, analytics, and document uploads.
+A modern React-based frontend for the Multi-Agent Conversational AI CRM System. This interface provides a comprehensive dashboard for managing conversations, users, and document uploads.
 
 ## Features
 
@@ -8,9 +8,7 @@ A modern React-based frontend for the Multi-Agent Conversational AI CRM System. 
 - **Interactive Chat Interface**: Real-time messaging with AI agents
 - **Multi-Agent Support**: Automatic agent selection based on conversation context
 - **User Management**: Complete CRM functionality with user profiles
-- **Analytics Dashboard**: Comprehensive insights with charts and statistics
 - **Document Management**: Upload and manage knowledge base documents
-- **Settings Panel**: Configure system preferences and behavior
 
 ### 🎨 UI/UX Features
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
@@ -75,10 +73,8 @@ frontend/
 │   └── index.html          # Main HTML file
 ├── src/
 │   ├── components/         # React components
-│   │   ├── Analytics.js    # Analytics dashboard
 │   │   ├── Chat.js         # Chat interface
 │   │   ├── Documents.js    # Document management
-│   │   ├── Settings.js     # Settings panel
 │   │   ├── Sidebar.js      # Navigation sidebar
 │   │   └── UserManager.js  # User management
 │   ├── services/
@@ -106,25 +102,12 @@ frontend/
 - **Search & Filter**: Find users quickly
 - **Conversation History**: View user's chat history
 
-### 3. Analytics Dashboard
-- **Key Metrics**: View conversation statistics
-- **Visual Charts**: Interactive charts for data insights
-- **User Analytics**: Filter by specific users
-- **Export Data**: Download analytics in JSON format
-- **Real-time Updates**: Live data refresh
-
-### 4. Document Management
+### 3. Document Management
 - **Upload Files**: Drag-and-drop or browse to upload
-- **Supported Formats**: CSV, TXT, JSON, PDF, DOCX, MD
+- **Supported Formats**: CSV, TXT, JSON, PDF
 - **Knowledge Base**: Manage AI's knowledge base
 - **Statistics**: View document collection metrics
 - **Clear Data**: Remove all documents when needed
-
-### 5. Settings
-- **API Configuration**: Server settings and timeouts
-- **Chat Settings**: AI model and behavior parameters
-- **RAG Configuration**: Document processing settings
-- **UI Preferences**: Theme and interface options
 
 ## API Integration
 

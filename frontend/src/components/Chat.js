@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, User, Bot, Loader2, Plus, RotateCcw, AlertCircle } from 'lucide-react';
+import { Send, User, Bot, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { chatAPI } from '../services/api';
 import sessionManager from '../services/sessionManager';
+import chatHistoryService from '../services/chatHistoryService';
 
 // Move MessageBubble outside main component and memoize it
 const MessageBubble = React.memo(({ message }) => {
@@ -98,7 +99,7 @@ function normalizeUserInfo(userInfo) {
   };
 }
 
-const Chat = ({ currentUser, onUserSelect }) => {
+const Chat = ({ currentUser, onUserSelect, currentSession, onSessionUpdate }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -111,28 +112,37 @@ const Chat = ({ currentUser, onUserSelect }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  // Load session when component mounts or currentSession changes
   useEffect(() => {
-    // Create a fresh session for new conversations
-    const sessionId = sessionManager.createNewSession();
-    setSessionId(sessionId);
-    
-    // Clear any stored user for fresh start
-    sessionManager.clearSession();
-    
-    // Add welcome message
-    setMessages([{
-      id: 1,
-      type: 'bot',
-      content: 'Hello! I\'m your AI assistant. I can help you with real estate inquiries, customer management, and general questions. How can I assist you today?',
-      timestamp: new Date(),
-      metadata: { agent_used: 'System' }
-    }]);
-  }, []);
+    loadCurrentSession();
+  }, [currentSession]);
 
   // Only scroll when messages actually change, not on every render
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  const loadCurrentSession = () => {
+    let session;
+    
+    if (currentSession) {
+      // Use the session passed from parent (from sidebar)
+      session = currentSession;
+    } else {
+      // Get current session from chatHistoryService
+      session = chatHistoryService.getCurrentSession();
+    }
+    
+    if (session) {
+      setSessionId(session.id);
+      setMessages(session.messages || []);
+      
+      // Load user for this session if available
+      if (session.user_id && !currentUser) {
+        sessionManager.loadUserForSession(session.user_id);
+      }
+    }
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -142,28 +152,32 @@ const Chat = ({ currentUser, onUserSelect }) => {
       id: Date.now(),
       type: 'user',
       content: inputMessage,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
-    setMessages(prev => {
-      const newMessages = [...prev, userMessage];
-      console.log('Added user message:', newMessages);
-      return newMessages;
-    });
+    // Add user message to current session
+    const updatedSession = chatHistoryService.addMessageToSession(sessionId, userMessage);
+    if (updatedSession) {
+      setMessages(updatedSession.messages);
+      
+      // Notify parent about session update
+      if (onSessionUpdate) {
+        onSessionUpdate(updatedSession);
+      }
+    }
+
     setInputMessage('');
     setIsLoading(true);
     setError(null);
 
     try {
-      // Use current user ID or create anonymous user
+      // Use current user ID or get from session
       let userId = currentUser?.id;
       if (!userId) {
-        const anonymousUser = sessionManager.createAnonymousUser();
-        userId = anonymousUser.id;
-        // Store the anonymous user temporarily
-        sessionManager.storeUser(anonymousUser);
+        const user = sessionManager.getOrCreateSessionUser();
+        userId = user.id;
         if (onUserSelect) {
-          onUserSelect(anonymousUser);
+          onUserSelect(user);
         }
       }
       
@@ -180,20 +194,23 @@ const Chat = ({ currentUser, onUserSelect }) => {
         id: Date.now() + 1,
         type: 'bot',
         content: response.response,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         metadata: response.metadata,
         sources: response.sources,
         processing_time: response.processing_time,
         conversation_id: response.conversation_id
       };
 
-      console.log('Bot Message:', botMessage);
-
-      setMessages(prev => {
-        const newMessages = [...prev, botMessage];
-        console.log('Updated messages:', newMessages);
-        return newMessages;
-      });
+      // Add bot message to current session
+      const updatedSessionWithBot = chatHistoryService.addMessageToSession(sessionId, botMessage);
+      if (updatedSessionWithBot) {
+        setMessages(updatedSessionWithBot.messages);
+        
+        // Notify parent about session update
+        if (onSessionUpdate) {
+          onSessionUpdate(updatedSessionWithBot);
+        }
+      }
 
       // Update current user if user info was extracted
       if (response.metadata?.user_info && onUserSelect) {
@@ -211,45 +228,43 @@ const Chat = ({ currentUser, onUserSelect }) => {
         id: Date.now() + 1,
         type: 'error',
         content: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
       };
 
-      setMessages(prev => [...prev, errorMessage]);
+      // Add error message to current session
+      const updatedSessionWithError = chatHistoryService.addMessageToSession(sessionId, errorMessage);
+      if (updatedSessionWithError) {
+        setMessages(updatedSessionWithError.messages);
+        
+        // Notify parent about session update
+        if (onSessionUpdate) {
+          onSessionUpdate(updatedSessionWithError);
+        }
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleNewChat = () => {
-    setMessages([{
-      id: Date.now(),
-      type: 'bot',
-      content: 'New conversation started. How can I help you?',
-      timestamp: new Date(),
-      metadata: { agent_used: 'System' }
-    }]);
-    const newSessionId = sessionManager.createNewSession();
-    setSessionId(newSessionId);
+    const newSession = chatHistoryService.createNewSession();
+    setSessionId(newSession.id);
+    setMessages(newSession.messages);
     setError(null);
+    
+    // Notify parent about new session
+    if (onSessionUpdate) {
+      onSessionUpdate(newSession);
+    }
   };
 
-  const handleResetConversation = async () => {
-    try {
-      if (currentUser) {
-        await chatAPI.resetConversation('conversation', currentUser.id);
-      }
-      setMessages([{
-        id: Date.now(),
-        type: 'bot',
-        content: 'Conversation history has been reset. Starting fresh!',
-        timestamp: new Date(),
-        metadata: { agent_used: 'System' }
-      }]);
-      const newSessionId = sessionManager.getSessionId();
-      setSessionId(newSessionId);
-    } catch (error) {
-      console.error('Reset error:', error);
+  // Get current session title
+  const getCurrentSessionTitle = () => {
+    if (currentSession) {
+      return currentSession.title;
     }
+    const session = chatHistoryService.getCurrentSession();
+    return session?.title || 'Chat';
   };
 
   console.log('Current user info:', currentUser);
@@ -260,7 +275,7 @@ const Chat = ({ currentUser, onUserSelect }) => {
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Chat Assistant</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{getCurrentSessionTitle()}</h2>
             <p className="text-sm text-gray-600">
               AI Assistant - Start chatting and I'll learn about you!
             </p>
@@ -272,13 +287,6 @@ const Chat = ({ currentUser, onUserSelect }) => {
             >
               <Plus className="w-4 h-4" />
               <span>New Chat</span>
-            </button>
-            <button
-              onClick={handleResetConversation}
-              className="flex items-center space-x-2 px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Reset</span>
             </button>
           </div>
         </div>

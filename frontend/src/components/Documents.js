@@ -122,9 +122,7 @@ const Documents = () => {
       { ext: '.csv', description: 'CSV files for structured data' },
       { ext: '.txt', description: 'Plain text files' },
       { ext: '.json', description: 'JSON data files' },
-      { ext: '.pdf', description: 'PDF documents' },
-      { ext: '.docx', description: 'Word documents' },
-      { ext: '.md', description: 'Markdown files' }
+      { ext: '.pdf', description: 'PDF documents' }
     ];
   };
 
@@ -264,7 +262,7 @@ const Documents = () => {
                   Drop files here or click to browse
                 </p>
                 <p className="text-sm text-gray-600 mb-4">
-                  Support for multiple file formats including CSV, TXT, JSON, PDF, and more
+                  Support for multiple file formats including CSV, TXT, JSON, and PDF
                 </p>
                 <input
                   id="file-input"
@@ -272,7 +270,7 @@ const Documents = () => {
                   multiple
                   onChange={handleFileSelect}
                   className="hidden"
-                  accept=".csv,.txt,.json,.pdf,.docx,.md"
+                  accept=".csv,.txt,.json,.pdf"
                 />
                 <button
                   onClick={() => document.getElementById('file-input').click()}

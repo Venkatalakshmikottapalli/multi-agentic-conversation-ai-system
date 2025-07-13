@@ -221,7 +221,7 @@ erDiagram
 
 #### 4. Document Management
 - **File Upload**: Drag-and-drop interface for multiple file types
-- **Supported Formats**: CSV, TXT, JSON, PDF, DOCX, MD files
+- **Supported Formats**: CSV, TXT, JSON, PDF files
 - **Knowledge Base**: Manage AI's document collection
 - **Statistics**: View total documents, chunks, and collection size
 - **Clear Data**: Remove all documents with confirmation

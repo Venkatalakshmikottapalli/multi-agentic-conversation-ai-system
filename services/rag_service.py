@@ -49,10 +49,59 @@ class RAGService:
             logger.error(f"Failed to initialize RAG service: {e}")
             raise
     
+    def remove_document_by_filename(self, filename: str) -> bool:
+        """Remove a document and its chunks by filename."""
+        try:
+            from database import get_db_context
+            from models.crm_models import Document
+            
+            with get_db_context() as db:
+                # Find existing document
+                existing_doc = db.query(Document).filter(
+                    Document.filename == filename,
+                    Document.is_active == True
+                ).first()
+                
+                if existing_doc:
+                    # Mark document as inactive in database
+                    existing_doc.is_active = False
+                    
+                    # Get all chunks related to this document from ChromaDB
+                    # Query ChromaDB for chunks with this filename
+                    try:
+                        # Get all items in collection
+                        all_items = self.collection.get()
+                        
+                        # Find chunks that belong to this document
+                        chunk_ids_to_delete = []
+                        for i, metadata in enumerate(all_items['metadatas']):
+                            if metadata and metadata.get('filename') == filename:
+                                chunk_ids_to_delete.append(all_items['ids'][i])
+                        
+                        # Delete chunks from ChromaDB
+                        if chunk_ids_to_delete:
+                            self.collection.delete(ids=chunk_ids_to_delete)
+                            logger.info(f"Removed {len(chunk_ids_to_delete)} chunks for document: {filename}")
+                        
+                    except Exception as e:
+                        logger.warning(f"Error removing chunks from ChromaDB for {filename}: {e}")
+                    
+                    db.commit()
+                    logger.info(f"Document removed from database: {filename}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"Error removing document {filename}: {e}")
+        
+        return False
+    
     def process_document(self, content: str, filename: str, content_type: str, 
                         metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Process and index a document."""
+        """Process and index a document. If document exists, replace it."""
         try:
+            # Remove existing document if it exists
+            self.remove_document_by_filename(filename)
+            
             # Generate document ID
             doc_id = f"{filename}_{datetime.now().timestamp()}"
             
@@ -252,25 +301,61 @@ class RAGService:
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get statistics about the document collection."""
         try:
-            count = self.collection.count()
+            from database import get_db_context
+            from models.crm_models import Document
+            from sqlalchemy import func
+            
+            # Get total chunks from ChromaDB
+            total_chunks = self.collection.count()
+            
+            # Get document statistics from database
+            with get_db_context() as db:
+                # Count unique documents
+                total_documents = db.query(Document).filter(Document.is_active == True).count()
+                
+                # Calculate total collection size
+                collection_size = db.query(func.sum(Document.file_size)).scalar() or 0
+                
+                # Get last updated timestamp
+                last_document = db.query(Document).filter(Document.is_active == True).order_by(Document.indexed_at.desc()).first()
+                last_updated = last_document.indexed_at.isoformat() if last_document and last_document.indexed_at else None
+            
             return {
-                "total_documents": count,
+                "total_documents": total_documents,
+                "total_chunks": total_chunks,
+                "collection_size": collection_size,
+                "last_updated": last_updated,
                 "collection_name": "knowledge_base",
                 "embedding_model": settings.embedding_model
             }
         except Exception as e:
             logger.error(f"Error getting collection stats: {e}")
-            return {"error": str(e)}
+            return {
+                "total_documents": 0,
+                "total_chunks": 0,
+                "collection_size": 0,
+                "last_updated": None,
+                "error": str(e)
+            }
     
     def clear_collection(self):
         """Clear all documents from the collection."""
         try:
-            # Delete collection and recreate
+            from database import get_db_context
+            from models.crm_models import Document
+            
+            # Delete collection and recreate in ChromaDB
             self.chroma_client.delete_collection("knowledge_base")
             self.collection = self.chroma_client.get_or_create_collection(
                 name="knowledge_base",
                 metadata={"hnsw:space": "cosine"}
             )
+            
+            # Clear documents from database
+            with get_db_context() as db:
+                db.query(Document).update({"is_active": False})
+                db.commit()
+            
             logger.info("Collection cleared successfully")
         except Exception as e:
             logger.error(f"Error clearing collection: {e}")

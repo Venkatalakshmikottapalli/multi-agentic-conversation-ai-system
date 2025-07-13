@@ -179,20 +179,115 @@ class TestRAGService:
         """Test getting collection statistics."""
         rag_service.collection.count.return_value = 100
         
-        stats = rag_service.get_collection_stats()
-        
-        assert stats['total_documents'] == 100
-        assert stats['collection_name'] == 'knowledge_base'
-        assert 'embedding_model' in stats
+        # Mock the database context and query
+        with patch('services.rag_service.get_db_context') as mock_db_context:
+            mock_db = MagicMock()
+            mock_db_context.return_value.__enter__.return_value = mock_db
+            
+            # Mock document count
+            mock_db.query.return_value.filter.return_value.count.return_value = 5
+            
+            # Mock collection size
+            mock_db.query.return_value.scalar.return_value = 1024
+            
+            # Mock last updated
+            mock_document = MagicMock()
+            mock_document.indexed_at.isoformat.return_value = '2024-01-01T00:00:00'
+            mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_document
+            
+            stats = rag_service.get_collection_stats()
+            
+            assert stats['total_documents'] == 5
+            assert stats['total_chunks'] == 100
+            assert stats['collection_size'] == 1024
+            assert stats['last_updated'] == '2024-01-01T00:00:00'
+            assert stats['collection_name'] == 'knowledge_base'
+            assert 'embedding_model' in stats
     
     def test_clear_collection(self, rag_service):
         """Test clearing the collection."""
-        rag_service.clear_collection()
-        
-        # Check that delete_collection was called
-        assert rag_service.chroma_client.delete_collection.called
-        
-        # Check that get_or_create_collection was called to recreate
+        # Mock the database context and query
+        with patch('services.rag_service.get_db_context') as mock_db_context:
+            mock_db = MagicMock()
+            mock_db_context.return_value.__enter__.return_value = mock_db
+            
+            rag_service.clear_collection()
+            
+            # Check that delete_collection was called
+            assert rag_service.chroma_client.delete_collection.called
+            
+            # Check that get_or_create_collection was called to recreate
+            assert rag_service.chroma_client.get_or_create_collection.called
+            
+            # Check that database was updated
+            assert mock_db.query.called
+            assert mock_db.commit.called
+    
+    def test_remove_document_by_filename(self, rag_service):
+        """Test removing a document by filename."""
+        # Mock the database context and query
+        with patch('services.rag_service.get_db_context') as mock_db_context:
+            mock_db = MagicMock()
+            mock_db_context.return_value.__enter__.return_value = mock_db
+            
+            # Mock existing document
+            mock_document = MagicMock()
+            mock_document.is_active = True
+            mock_db.query.return_value.filter.return_value.first.return_value = mock_document
+            
+            # Mock ChromaDB get method
+            rag_service.collection.get.return_value = {
+                'ids': ['doc1_chunk_0', 'doc2_chunk_0'],
+                'metadatas': [
+                    {'filename': 'test.txt'},
+                    {'filename': 'other.txt'}
+                ]
+            }
+            
+            # Test removal
+            result = rag_service.remove_document_by_filename('test.txt')
+            
+            # Verify document was marked inactive
+            assert mock_document.is_active == False
+            
+            # Verify ChromaDB delete was called
+            rag_service.collection.delete.assert_called_once_with(ids=['doc1_chunk_0'])
+            
+            # Verify database commit
+            mock_db.commit.assert_called_once()
+            
+            assert result == True
+    
+    def test_process_document_replacement(self, rag_service):
+        """Test that process_document replaces existing documents."""
+        # Mock the remove_document_by_filename method
+        with patch.object(rag_service, 'remove_document_by_filename') as mock_remove:
+            with patch('services.rag_service.get_db_context') as mock_db_context:
+                mock_db = MagicMock()
+                mock_db_context.return_value.__enter__.return_value = mock_db
+                
+                # Mock document creation
+                mock_document = MagicMock()
+                mock_document.id = 'test_doc_id'
+                mock_db.add.return_value = None
+                mock_db.commit.return_value = None
+                
+                # Test document processing
+                result = rag_service.process_document(
+                    content="Test content",
+                    filename="test.txt",
+                    content_type="text/plain"
+                )
+                
+                # Verify remove was called first
+                mock_remove.assert_called_once_with("test.txt")
+                
+                # Verify document was added to database
+                mock_db.add.assert_called_once()
+                mock_db.commit.assert_called_once()
+                
+                # Verify ChromaDB add was called
+                rag_service.collection.add.assert_called_once()
         assert rag_service.chroma_client.get_or_create_collection.called
     
     def test_process_document_with_metadata(self, rag_service):

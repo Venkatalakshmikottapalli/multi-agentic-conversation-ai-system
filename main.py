@@ -11,6 +11,8 @@ import aiofiles
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
+import PyPDF2
+from io import BytesIO
 
 # Import configurations and services
 from config import settings
@@ -18,11 +20,13 @@ from database import get_db, create_tables, get_db_context
 from services.chat_agent import chat_agent
 from services.rag_service import rag_service
 from services.crm_service import crm_service
+from services.settings_service import settings_service
 from schemas.api_schemas import (
     ChatMessage, ChatResponse, UserCreate, UserUpdate, UserResponse,
     ConversationResponse, ConversationWithMessages, MessageResponse,
     DocumentResponse, ResetRequest, ResetResponse, APIResponse,
-    PaginatedResponse, HealthResponse
+    PaginatedResponse, HealthResponse, SystemAnalytics, UserAnalytics,
+    SystemSettings, SettingsUpdate, SystemOverview
 )
 
 # Configure logging
@@ -80,6 +84,12 @@ if os.path.exists("static"):
 async def load_initial_data():
     """Load the initial CSV data into the RAG system."""
     try:
+        # Check if data already exists to prevent duplicates
+        stats = rag_service.get_collection_stats()
+        if stats.get("total_documents", 0) > 0:
+            logger.info(f"Initial data already loaded ({stats['total_documents']} documents), skipping CSV processing")
+            return
+            
         csv_file_path = "HackathonInternalKnowledgeBase.csv"
         if os.path.exists(csv_file_path):
             with open(csv_file_path, 'r', encoding='utf-8') as f:
@@ -188,14 +198,94 @@ async def chat(message: ChatMessage):
         logger.error(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def _json_to_readable_text(data, filename: str) -> str:
+    """Convert JSON data to readable text for better RAG processing."""
+    
+    def format_value(key, value, indent=0):
+        """Recursively format JSON values into readable text."""
+        spaces = "  " * indent
+        
+        if isinstance(value, dict):
+            if not value:  # Empty dict
+                return f"{spaces}{key}: Empty object\n"
+            
+            result = f"{spaces}{key}:\n"
+            for k, v in value.items():
+                result += format_value(k, v, indent + 1)
+            return result
+            
+        elif isinstance(value, list):
+            if not value:  # Empty list
+                return f"{spaces}{key}: Empty list\n"
+            
+            result = f"{spaces}{key} (list with {len(value)} items):\n"
+            for i, item in enumerate(value):
+                if isinstance(item, (dict, list)):
+                    result += format_value(f"Item {i+1}", item, indent + 1)
+                else:
+                    result += f"{spaces}  - {item}\n"
+            return result
+            
+        elif isinstance(value, str):
+            return f"{spaces}{key}: {value}\n"
+        
+        elif isinstance(value, (int, float, bool)):
+            return f"{spaces}{key}: {value}\n"
+        
+        elif value is None:
+            return f"{spaces}{key}: null\n"
+        
+        else:
+            return f"{spaces}{key}: {str(value)}\n"
+    
+    try:
+        # Start with file header
+        readable_text = f"JSON Document: {filename}\n"
+        readable_text += "=" * 50 + "\n\n"
+        
+        if isinstance(data, dict):
+            # Handle JSON object
+            for key, value in data.items():
+                readable_text += format_value(key, value)
+        
+        elif isinstance(data, list):
+            # Handle JSON array
+            readable_text += f"Array with {len(data)} items:\n\n"
+            for i, item in enumerate(data):
+                readable_text += format_value(f"Item {i+1}", item)
+                readable_text += "\n"
+        
+        else:
+            # Handle primitive JSON value
+            readable_text += f"Value: {data}\n"
+        
+        return readable_text
+        
+    except Exception as e:
+        # Fallback to string representation
+        return f"JSON Document: {filename}\nContent: {str(data)}"
+
 # Document upload endpoint
 @app.post("/upload_docs", response_model=APIResponse)
 async def upload_documents(files: List[UploadFile] = File(...)):
     """Upload documents to the RAG knowledge base."""
     try:
+        from database import get_db_context
+        from models.crm_models import Document
+        
         uploaded_docs = []
+        replaced_docs = []
         
         for file in files:
+            # Check if document already exists
+            with get_db_context() as db:
+                existing_doc = db.query(Document).filter(
+                    Document.filename == file.filename,
+                    Document.is_active == True
+                ).first()
+                
+                is_replacement = existing_doc is not None
+            
             # Read file content
             content = await file.read()
             
@@ -213,13 +303,76 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                     file.filename,
                     file.content_type
                 )
-            elif file.content_type == "application/json":
+            elif file.content_type == "application/json" or file.filename.lower().endswith('.json'):
                 # Process JSON file
-                doc_id = rag_service.process_document(
-                    content.decode('utf-8'),
-                    file.filename,
-                    file.content_type
-                )
+                try:
+                    # Decode and parse JSON
+                    json_text = content.decode('utf-8')
+                    import json
+                    parsed_json = json.loads(json_text)
+                    
+                    # Convert JSON to readable text description
+                    readable_text = _json_to_readable_text(parsed_json, file.filename)
+                    
+                    # Process the readable text
+                    doc_id = rag_service.process_document(
+                        readable_text,
+                        file.filename,
+                        file.content_type or "application/json",
+                        metadata={"original_format": "json", "has_structure": True}
+                    )
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in file {file.filename}: {e}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid JSON format in file {file.filename}: {str(e)}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error processing JSON file {file.filename}: {e}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to process JSON file: {str(e)}"
+                    )
+            elif file.content_type == "application/pdf":
+                # Process PDF file
+                try:
+                    # Extract text from PDF using PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(BytesIO(content))
+                    text_content = ""
+                    
+                    # Extract text from all pages
+                    for page_num, page in enumerate(pdf_reader.pages):
+                        try:
+                            page_text = page.extract_text()
+                            if page_text.strip():  # Only add non-empty pages
+                                text_content += f"\n--- Page {page_num + 1} ---\n"
+                                text_content += page_text
+                                text_content += "\n"
+                        except Exception as e:
+                            logger.warning(f"Could not extract text from page {page_num + 1} of {file.filename}: {e}")
+                            continue
+                    
+                    if not text_content.strip():
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Could not extract text from PDF: {file.filename}"
+                        )
+                    
+                    # Process extracted text as document
+                    doc_id = rag_service.process_document(
+                        text_content,
+                        file.filename,
+                        file.content_type,
+                        metadata={"total_pages": len(pdf_reader.pages)}
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error processing PDF {file.filename}: {e}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Failed to process PDF file: {str(e)}"
+                    )
             else:
                 # For other file types, try to process as text
                 try:
@@ -234,16 +387,34 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                         detail=f"Unsupported file type: {file.content_type}"
                     )
             
-            uploaded_docs.append({
+            doc_info = {
                 "filename": file.filename,
                 "document_id": doc_id,
                 "content_type": file.content_type
-            })
+            }
+            
+            if is_replacement:
+                replaced_docs.append(doc_info)
+            else:
+                uploaded_docs.append(doc_info)
+        
+        # Create appropriate response message
+        message_parts = []
+        if uploaded_docs:
+            message_parts.append(f"Successfully uploaded {len(uploaded_docs)} new documents")
+        if replaced_docs:
+            message_parts.append(f"Successfully replaced {len(replaced_docs)} existing documents")
+        
+        message = "; ".join(message_parts) if message_parts else "No documents processed"
         
         return APIResponse(
             success=True,
-            message=f"Successfully uploaded {len(uploaded_docs)} documents",
-            data={"uploaded_documents": uploaded_docs}
+            message=message,
+            data={
+                "uploaded_documents": uploaded_docs,
+                "replaced_documents": replaced_docs,
+                "total_processed": len(uploaded_docs) + len(replaced_docs)
+            }
         )
         
     except Exception as e:
@@ -572,6 +743,160 @@ async def clear_rag_collection():
         logger.error(f"Error clearing RAG collection: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# Admin Analytics Endpoints
+@app.get("/admin/analytics/system", response_model=APIResponse)
+async def get_system_analytics():
+    """Get comprehensive system analytics for admin use."""
+    try:
+        analytics = crm_service.get_system_analytics()
+        
+        return APIResponse(
+            success=True,
+            message="System analytics retrieved successfully",
+            data=analytics
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/analytics/user/{user_id}", response_model=APIResponse)
+async def get_detailed_user_analytics(user_id: str):
+    """Get detailed analytics for a specific user."""
+    try:
+        analytics = crm_service.get_detailed_user_analytics(user_id)
+        if not analytics:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return APIResponse(
+            success=True,
+            message="User analytics retrieved successfully",
+            data=analytics
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/analytics/overview", response_model=APIResponse)
+async def get_analytics_overview():
+    """Get analytics overview combining system and user metrics."""
+    try:
+        system_analytics = crm_service.get_system_analytics()
+        rag_stats = rag_service.get_collection_stats()
+        
+        overview = {
+            "system_metrics": system_analytics,
+            "rag_metrics": rag_stats,
+            "summary": {
+                "total_users": system_analytics.get("total_users", 0),
+                "total_conversations": system_analytics.get("total_conversations", 0),
+                "total_documents": rag_stats.get("total_documents", 0),
+                "system_health": "operational"
+            }
+        }
+        
+        return APIResponse(
+            success=True,
+            message="Analytics overview retrieved successfully",
+            data=overview
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting analytics overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Admin Settings Endpoints
+@app.get("/admin/settings", response_model=APIResponse)
+async def get_system_settings():
+    """Get current system settings for admin viewing."""
+    try:
+        settings_data = settings_service.get_system_settings()
+        
+        return APIResponse(
+            success=True,
+            message="System settings retrieved successfully",
+            data=settings_data
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/admin/settings", response_model=APIResponse)
+async def update_system_settings(settings_update: SettingsUpdate):
+    """Update system settings."""
+    try:
+        success = settings_service.update_settings(
+            settings_update.category,
+            settings_update.settings
+        )
+        
+        if success:
+            return APIResponse(
+                success=True,
+                message=f"Settings updated successfully for category: {settings_update.category}",
+                data={"category": settings_update.category, "updated": True}
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update settings")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating system settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/overview", response_model=APIResponse)
+async def get_system_overview():
+    """Get comprehensive system overview for admin dashboard."""
+    try:
+        overview = settings_service.get_system_overview()
+        
+        return APIResponse(
+            success=True,
+            message="System overview retrieved successfully",
+            data=overview
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting system overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/health/detailed", response_model=APIResponse)
+async def get_detailed_health():
+    """Get detailed health information for admin monitoring."""
+    try:
+        # Get basic health
+        basic_health = {
+            "status": "healthy",
+            "database": "healthy",
+            "vector_store": "healthy",
+            "openai": "healthy" if settings.openai_api_key else "not_configured"
+        }
+        
+        # Get system overview
+        system_overview = settings_service.get_system_overview()
+        
+        # Combine health data
+        detailed_health = {
+            "basic_health": basic_health,
+            "system_overview": system_overview,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return APIResponse(
+            success=True,
+            message="Detailed health information retrieved successfully",
+            data=detailed_health
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting detailed health: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Root endpoint
 @app.get("/", response_model=APIResponse)
 async def root():
@@ -588,7 +913,16 @@ async def root():
                 "health": "/health",
                 "docs": "/docs",
                 "crm": "/crm/*",
-                "rag": "/rag/*"
+                "rag": "/rag/*",
+                "admin": "/admin/*"
+            },
+            "admin_endpoints": {
+                "system_analytics": "/admin/analytics/system",
+                "user_analytics": "/admin/analytics/user/{user_id}",
+                "analytics_overview": "/admin/analytics/overview",
+                "system_settings": "/admin/settings",
+                "system_overview": "/admin/overview",
+                "detailed_health": "/admin/health/detailed"
             }
         }
     )

@@ -129,4 +129,58 @@ class HealthResponse(BaseModel):
     database: str
     vector_store: str
     openai: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow) 
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# Admin Analytics Schemas
+class SystemAnalytics(BaseModel):
+    """Comprehensive system analytics for admin use."""
+    total_users: int
+    active_users: int
+    total_conversations: int
+    total_messages: int
+    average_messages_per_conversation: float
+    conversations_by_status: Dict[str, int]
+    conversations_by_category: Dict[str, int]
+    users_by_role: Dict[str, int]
+    recent_activity: List[Dict[str, Any]]
+    top_users: List[Dict[str, Any]]
+    agent_usage_stats: Dict[str, Any]
+    system_performance: Dict[str, Any]
+
+class UserAnalytics(BaseModel):
+    """Detailed user analytics for admin use."""
+    user_id: str
+    user_name: Optional[str]
+    user_email: Optional[str]
+    total_conversations: int
+    total_messages: int
+    average_messages_per_conversation: float
+    most_used_agent: Optional[str]
+    conversation_categories: Dict[str, int]
+    conversation_statuses: Dict[str, int]
+    first_conversation: Optional[datetime]
+    last_conversation: Optional[datetime]
+    user_activity_trend: List[Dict[str, Any]]
+
+# Admin Settings Schemas
+class SystemSettings(BaseModel):
+    """System settings configuration."""
+    api_config: Dict[str, Any]
+    database_config: Dict[str, Any]
+    ai_config: Dict[str, Any]
+    rag_config: Dict[str, Any]
+    chat_config: Dict[str, Any]
+    security_config: Dict[str, Any]
+
+class SettingsUpdate(BaseModel):
+    """Settings update request."""
+    category: str = Field(..., pattern="^(ai|rag|chat|security)$")
+    settings: Dict[str, Any]
+
+class SystemOverview(BaseModel):
+    """System overview for admin dashboard."""
+    system_health: Dict[str, Any]
+    resource_usage: Dict[str, Any]
+    recent_errors: List[Dict[str, Any]]
+    uptime: str
+    version_info: Dict[str, Any] 

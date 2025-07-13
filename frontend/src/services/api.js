@@ -110,13 +110,6 @@ export const crmAPI = {
     });
     return response.data;
   },
-
-  getAnalytics: async (userId = null) => {
-    const response = await api.get('/crm/analytics', {
-      params: userId ? { user_id: userId } : {},
-    });
-    return response.data;
-  },
 };
 
 // Document/RAG API

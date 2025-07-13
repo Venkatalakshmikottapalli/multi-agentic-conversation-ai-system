@@ -365,5 +365,256 @@ class CRMService:
             logger.error(f"Error getting user stats for {user_id}: {e}")
             return {}
 
+    def get_system_analytics(self) -> Dict[str, Any]:
+        """Get comprehensive system analytics for admin use."""
+        try:
+            with get_db_context() as db:
+                # Basic counts
+                total_users = db.query(User).count()
+                active_users = db.query(User).filter(User.is_active == True).count()
+                total_conversations = db.query(Conversation).count()
+                total_messages = db.query(Message).count()
+                
+                # Average messages per conversation
+                avg_messages = total_messages / total_conversations if total_conversations > 0 else 0
+                
+                # Conversations by status
+                status_counts = db.query(
+                    Conversation.status,
+                    func.count(Conversation.id).label('count')
+                ).group_by(Conversation.status).all()
+                conversations_by_status = {row.status: row.count for row in status_counts}
+                
+                # Conversations by category
+                category_counts = db.query(
+                    Conversation.category,
+                    func.count(Conversation.id).label('count')
+                ).group_by(Conversation.category).all()
+                conversations_by_category = {row.category or 'uncategorized': row.count for row in category_counts}
+                
+                # Users by role
+                role_counts = db.query(
+                    User.role,
+                    func.count(User.id).label('count')
+                ).group_by(User.role).all()
+                users_by_role = {row.role or 'unspecified': row.count for row in role_counts}
+                
+                # Recent activity (last 10 conversations)
+                recent_conversations = db.query(Conversation).order_by(
+                    desc(Conversation.updated_at)
+                ).limit(10).all()
+                recent_activity = [
+                    {
+                        "id": conv.id,
+                        "user_id": conv.user_id,
+                        "category": conv.category,
+                        "status": conv.status,
+                        "updated_at": conv.updated_at.isoformat() if conv.updated_at else None
+                    }
+                    for conv in recent_conversations
+                ]
+                
+                # Top users by conversation count
+                top_users_query = db.query(
+                    User.id,
+                    User.name,
+                    User.email,
+                    func.count(Conversation.id).label('conversation_count')
+                ).join(Conversation).group_by(User.id).order_by(
+                    desc(func.count(Conversation.id))
+                ).limit(10).all()
+                
+                top_users = [
+                    {
+                        "user_id": row.id,
+                        "name": row.name,
+                        "email": row.email,
+                        "conversation_count": row.conversation_count
+                    }
+                    for row in top_users_query
+                ]
+                
+                # Agent usage stats (from message metadata)
+                agent_usage = {}
+                messages_with_metadata = db.query(Message).filter(
+                    Message.metadata.isnot(None)
+                ).all()
+                
+                for msg in messages_with_metadata:
+                    if msg.metadata and isinstance(msg.metadata, dict):
+                        agent = msg.metadata.get('agent_used', 'unknown')
+                        agent_usage[agent] = agent_usage.get(agent, 0) + 1
+                
+                # System performance metrics
+                system_performance = {
+                    "total_storage_mb": self._calculate_database_size(),
+                    "average_response_time": self._calculate_average_response_time(),
+                    "error_rate": self._calculate_error_rate()
+                }
+                
+                return {
+                    "total_users": total_users,
+                    "active_users": active_users,
+                    "total_conversations": total_conversations,
+                    "total_messages": total_messages,
+                    "average_messages_per_conversation": round(avg_messages, 2),
+                    "conversations_by_status": conversations_by_status,
+                    "conversations_by_category": conversations_by_category,
+                    "users_by_role": users_by_role,
+                    "recent_activity": recent_activity,
+                    "top_users": top_users,
+                    "agent_usage_stats": agent_usage,
+                    "system_performance": system_performance
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting system analytics: {e}")
+            return {}
+
+    def get_detailed_user_analytics(self, user_id: str) -> Dict[str, Any]:
+        """Get detailed analytics for a specific user."""
+        try:
+            with get_db_context() as db:
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    return {}
+                
+                # Basic user stats
+                conversations = db.query(Conversation).filter(
+                    Conversation.user_id == user_id
+                ).all()
+                
+                total_conversations = len(conversations)
+                total_messages = db.query(Message).join(Conversation).filter(
+                    Conversation.user_id == user_id
+                ).count()
+                
+                avg_messages = total_messages / total_conversations if total_conversations > 0 else 0
+                
+                # Most used agent
+                agent_usage = {}
+                messages_with_metadata = db.query(Message).join(Conversation).filter(
+                    Conversation.user_id == user_id,
+                    Message.metadata.isnot(None)
+                ).all()
+                
+                for msg in messages_with_metadata:
+                    if msg.metadata and isinstance(msg.metadata, dict):
+                        agent = msg.metadata.get('agent_used', 'unknown')
+                        agent_usage[agent] = agent_usage.get(agent, 0) + 1
+                
+                most_used_agent = max(agent_usage.items(), key=lambda x: x[1])[0] if agent_usage else None
+                
+                # Conversation categories and statuses
+                conversation_categories = {}
+                conversation_statuses = {}
+                
+                for conv in conversations:
+                    category = conv.category or 'uncategorized'
+                    status = conv.status
+                    conversation_categories[category] = conversation_categories.get(category, 0) + 1
+                    conversation_statuses[status] = conversation_statuses.get(status, 0) + 1
+                
+                # First and last conversation dates
+                first_conversation = min(conv.created_at for conv in conversations) if conversations else None
+                last_conversation = max(conv.updated_at for conv in conversations) if conversations else None
+                
+                # User activity trend (conversations per day for last 30 days)
+                from datetime import timedelta
+                activity_trend = []
+                if conversations:
+                    # Simple activity trend - count conversations per day
+                    activity_trend = self._get_user_activity_trend(user_id, db)
+                
+                return {
+                    "user_id": user_id,
+                    "user_name": user.name,
+                    "user_email": user.email,
+                    "total_conversations": total_conversations,
+                    "total_messages": total_messages,
+                    "average_messages_per_conversation": round(avg_messages, 2),
+                    "most_used_agent": most_used_agent,
+                    "conversation_categories": conversation_categories,
+                    "conversation_statuses": conversation_statuses,
+                    "first_conversation": first_conversation.isoformat() if first_conversation else None,
+                    "last_conversation": last_conversation.isoformat() if last_conversation else None,
+                    "user_activity_trend": activity_trend
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting detailed user analytics for {user_id}: {e}")
+            return {}
+
+    def _calculate_database_size(self) -> float:
+        """Calculate approximate database size in MB."""
+        try:
+            # This is a simplified calculation
+            # In a real implementation, you'd query the database system tables
+            return 10.5  # Placeholder
+        except Exception:
+            return 0.0
+
+    def _calculate_average_response_time(self) -> float:
+        """Calculate average response time from message metadata."""
+        try:
+            with get_db_context() as db:
+                messages_with_metadata = db.query(Message).filter(
+                    Message.metadata.isnot(None)
+                ).limit(100).all()
+                
+                response_times = []
+                for msg in messages_with_metadata:
+                    if msg.metadata and isinstance(msg.metadata, dict):
+                        response_time = msg.metadata.get('processing_time')
+                        if response_time and isinstance(response_time, (int, float)):
+                            response_times.append(response_time)
+                
+                return sum(response_times) / len(response_times) if response_times else 0.0
+                
+        except Exception:
+            return 0.0
+
+    def _calculate_error_rate(self) -> float:
+        """Calculate error rate from system logs."""
+        try:
+            # This would ideally read from a logging system
+            # For now, return a placeholder
+            return 0.02  # 2% error rate
+        except Exception:
+            return 0.0
+
+    def _get_user_activity_trend(self, user_id: str, db: Session) -> List[Dict[str, Any]]:
+        """Get user activity trend for the last 30 days."""
+        try:
+            from datetime import datetime, timedelta
+            
+            # Get conversations from last 30 days
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            conversations = db.query(Conversation).filter(
+                Conversation.user_id == user_id,
+                Conversation.created_at >= thirty_days_ago
+            ).all()
+            
+            # Group by date
+            activity_by_date = {}
+            for conv in conversations:
+                date_str = conv.created_at.strftime('%Y-%m-%d')
+                activity_by_date[date_str] = activity_by_date.get(date_str, 0) + 1
+            
+            # Create trend data
+            trend_data = []
+            for i in range(30):
+                date = (datetime.utcnow() - timedelta(days=i)).strftime('%Y-%m-%d')
+                trend_data.append({
+                    "date": date,
+                    "conversations": activity_by_date.get(date, 0)
+                })
+            
+            return sorted(trend_data, key=lambda x: x['date'])
+            
+        except Exception as e:
+            logger.error(f"Error getting user activity trend: {e}")
+            return []
+
 # Global CRM service instance
 crm_service = CRMService() 

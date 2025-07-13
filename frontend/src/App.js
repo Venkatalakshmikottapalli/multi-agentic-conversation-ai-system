@@ -2,23 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Chat from './components/Chat';
-import Analytics from './components/Analytics';
 import Documents from './components/Documents';
-import Settings from './components/Settings';
 import { systemAPI } from './services/api';
+import sessionManager from './services/sessionManager';
+import chatHistoryService from './services/chatHistoryService';
 import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [currentSession, setCurrentSession] = useState(null);
   const [systemHealth, setSystemHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(true);
+  const [refreshSidebar, setRefreshSidebar] = useState(0);
 
   useEffect(() => {
+    initializeApp();
     checkSystemHealth();
     const interval = setInterval(checkSystemHealth, 60000); // Check every minute
     return () => clearInterval(interval);
   }, []);
+
+  const initializeApp = () => {
+    // Initialize session and user
+    const { session, user } = sessionManager.initializeSession();
+    setCurrentSession(session);
+    setCurrentUser(user);
+  };
 
   const checkSystemHealth = async () => {
     try {
@@ -48,6 +58,24 @@ function App() {
     setCurrentUser(user);
   };
 
+  const handleSessionChange = (session) => {
+    setCurrentSession(session);
+    
+    // Update the current session in the history service
+    if (session && session.id) {
+      chatHistoryService.setCurrentSessionId(session.id);
+    }
+    
+    // Trigger sidebar refresh when sessions are changed
+    setRefreshSidebar(prev => prev + 1);
+  };
+
+  const handleSessionUpdate = (updatedSession) => {
+    setCurrentSession(updatedSession);
+    // Trigger sidebar refresh when sessions are updated
+    setRefreshSidebar(prev => prev + 1);
+  };
+
   return (
     <Router>
       <div className="flex h-screen bg-gray-100">
@@ -56,6 +84,8 @@ function App() {
           onClose={() => setSidebarOpen(false)}
           currentUser={currentUser}
           onUserSelect={handleUserSelect}
+          onSessionChange={handleSessionChange}
+          refreshTrigger={refreshSidebar}
         />
         
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -97,7 +127,19 @@ function App() {
                 {currentUser && (
                   <div className="flex items-center space-x-2 bg-blue-50 px-3 py-1 rounded-full">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span className="text-sm text-blue-700">{currentUser.name}</span>
+                    <span className="text-sm text-blue-700">
+                      {currentUser.name || `User ${currentUser.id?.slice(-4)}`}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Current Session Info */}
+                {currentSession && (
+                  <div className="flex items-center space-x-2 bg-green-50 px-3 py-1 rounded-full">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-green-700">
+                      {currentSession.title || 'Active Session'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -114,13 +156,12 @@ function App() {
                   <Chat 
                     currentUser={currentUser} 
                     onUserSelect={handleUserSelect}
+                    currentSession={currentSession}
+                    onSessionUpdate={handleSessionUpdate}
                   />
                 } 
               />
-              {/* Removed /users route and UserManager */}
-              <Route path="/analytics" element={<Analytics />} />
               <Route path="/documents" element={<Documents />} />
-              <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>
         </div>
