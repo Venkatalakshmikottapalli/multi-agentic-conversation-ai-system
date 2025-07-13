@@ -3,13 +3,11 @@ import {
   Upload, 
   FileText, 
   Trash2, 
-  Download, 
   RefreshCw,
   AlertCircle,
   CheckCircle,
   X,
   Database,
-  Eye,
   Info
 } from 'lucide-react';
 import { docAPI } from '../services/api';
@@ -17,13 +15,15 @@ import { docAPI } from '../services/api';
 const Documents = () => {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [ragStats, setRagStats] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [deletingDocument, setDeletingDocument] = useState(null);
 
   useEffect(() => {
     loadRagStats();
@@ -31,14 +31,11 @@ const Documents = () => {
 
   const loadRagStats = async () => {
     try {
-      setLoading(true);
       const response = await docAPI.getRagStats();
       setRagStats(response.data);
     } catch (error) {
       console.error('Error loading RAG stats:', error);
       setError('Failed to load document statistics');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -74,7 +71,8 @@ const Documents = () => {
       
       const response = await docAPI.uploadDocuments(selectedFiles);
       
-      setSuccess(`Successfully uploaded ${selectedFiles.length} file(s)`);
+      // Use the message from the backend response (distinguishes uploads vs replacements)
+      setSuccess(response.message || `Successfully uploaded ${selectedFiles.length} file(s)`);
       setSelectedFiles([]);
       loadRagStats();
       
@@ -92,7 +90,6 @@ const Documents = () => {
 
   const handleClearData = async () => {
     try {
-      setLoading(true);
       await docAPI.clearRagData();
       setSuccess('Document collection cleared successfully');
       setShowClearConfirm(false);
@@ -100,13 +97,49 @@ const Documents = () => {
     } catch (error) {
       console.error('Error clearing RAG data:', error);
       setError('Failed to clear document collection');
-    } finally {
-      setLoading(false);
     }
   };
 
   const removeSelectedFile = (index) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const loadDocuments = async () => {
+    try {
+      setDocumentsLoading(true);
+      const response = await docAPI.getDocuments(1, 100); // Load first 100 documents
+      console.log('Documents API response:', response); // Debug log
+      // The backend returns { success: true, data: [documents], ... }
+      // So we need to access response.data to get the documents array
+      setDocuments(response.data || []);
+    } catch (error) {
+      console.error('Error loading documents:', error);
+      setError('Failed to load documents');
+    } finally {
+      setDocumentsLoading(false);
+    }
+  };
+
+  const handleDeleteDocument = async (filename) => {
+    if (!window.confirm(`Are you sure you want to delete "${filename}"?`)) return;
+    
+    try {
+      setDeletingDocument(filename);
+      await docAPI.deleteDocument(filename);
+      setSuccess(`Document "${filename}" deleted successfully`);
+      loadDocuments(); // Reload documents list
+      loadRagStats(); // Refresh stats
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      setError(error.response?.data?.detail || 'Failed to delete document');
+    } finally {
+      setDeletingDocument(null);
+    }
+  };
+
+  const handleShowDocuments = () => {
+    setShowDocumentsModal(true);
+    loadDocuments();
   };
 
   const formatFileSize = (bytes) => {
@@ -126,8 +159,13 @@ const Documents = () => {
     ];
   };
 
-  const StatCard = ({ title, value, icon: Icon, color }) => (
-    <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+  const StatCard = ({ title, value, icon: Icon, color, onClick, clickable = false }) => (
+    <div 
+      className={`bg-white rounded-lg shadow-sm p-6 border border-gray-200 ${
+        clickable ? 'cursor-pointer hover:shadow-md transition-shadow' : ''
+      }`}
+      onClick={onClick}
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>
@@ -137,6 +175,11 @@ const Documents = () => {
           <Icon className="w-6 h-6 text-white" />
         </div>
       </div>
+      {clickable && (
+        <div className="mt-2">
+          <p className="text-xs text-blue-600">Click to view all documents</p>
+        </div>
+      )}
     </div>
   );
 
@@ -212,6 +255,8 @@ const Documents = () => {
                 value={ragStats.total_documents || 0}
                 icon={FileText}
                 color="bg-blue-500"
+                clickable={true}
+                onClick={handleShowDocuments}
               />
               <StatCard
                 title="Document Chunks"
@@ -297,7 +342,7 @@ const Documents = () => {
                           <div>
                             <p className="text-sm font-medium text-gray-900">{file.name}</p>
                             <p className="text-xs text-gray-500">
-                              {formatFileSize(file.size)} • {file.type || 'Unknown type'}
+                              {formatFileSize(file.size)} | {file.type || 'Unknown type'}
                             </p>
                           </div>
                         </div>
@@ -383,10 +428,10 @@ const Documents = () => {
                 <div>
                   <h4 className="text-sm font-medium text-gray-900 mb-3">Usage Tips</h4>
                   <ul className="text-sm text-gray-600 space-y-1">
-                    <li>• Upload CSV files for structured data</li>
-                    <li>• Use descriptive file names</li>
-                    <li>• Larger files take longer to process</li>
-                    <li>• Remove outdated documents regularly</li>
+                    <li>- Upload CSV files for structured data</li>
+                    <li>- Use descriptive file names</li>
+                    <li>- Larger files take longer to process</li>
+                    <li>- Remove outdated documents regularly</li>
                   </ul>
                 </div>
               </div>
@@ -394,6 +439,93 @@ const Documents = () => {
           </div>
         </div>
       </div>
+
+      {/* Documents Modal */}
+      {showDocumentsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl mx-4 max-h-[80vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">All Documents</h3>
+              <button
+                onClick={() => setShowDocumentsModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="flex-1 overflow-auto p-6">
+              {documentsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
+                  <span className="ml-2 text-gray-600">Loading documents...</span>
+                </div>
+              ) : documents.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No documents found</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border"
+                    >
+                      <div className="flex items-center space-x-3 flex-1">
+                        <FileText className="w-5 h-5 text-gray-500" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {doc.filename}
+                          </p>
+                          <div className="flex items-center space-x-4 text-xs text-gray-500">
+                            <span>{doc.content_type}</span>
+                            {doc.file_size && (
+                              <span>{formatFileSize(doc.file_size)}</span>
+                            )}
+                            <span>
+                              {new Date(doc.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteDocument(doc.filename)}
+                        disabled={deletingDocument === doc.filename}
+                        className="flex items-center space-x-1 px-3 py-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deletingDocument === doc.filename ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                        <span className="text-sm">Delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">
+                  Total: {documents.length} document{documents.length !== 1 ? 's' : ''}
+                </p>
+                <button
+                  onClick={() => setShowDocumentsModal(false)}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clear Confirmation Modal */}
       {showClearConfirm && (

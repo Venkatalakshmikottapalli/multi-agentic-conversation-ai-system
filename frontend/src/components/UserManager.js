@@ -306,7 +306,7 @@ const UserManager = () => {
                         </div>
                       </div>
                       <div className="mt-1 text-xs text-gray-600">
-                        Status: {conversation.status} • Category: {conversation.category}
+                        Status: {conversation.status} | Category: {conversation.category}
                       </div>
                     </div>
                   ))}

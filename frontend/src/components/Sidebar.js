@@ -5,11 +5,9 @@ import {
   Users, 
   FileText, 
   X,
-  Plus,
   Search,
   Trash2,
-  Clock,
-  MoreVertical
+  Clock
 } from 'lucide-react';
 import chatHistoryService from '../services/chatHistoryService';
 import sessionManager from '../services/sessionManager';
@@ -39,17 +37,6 @@ const Sidebar = ({ isOpen, onClose, currentUser, onUserSelect, onSessionChange, 
   const loadChatSessions = () => {
     const sessions = chatHistoryService.getSessionsList();
     setChatSessions(sessions);
-  };
-
-  const handleNewChat = () => {
-    const newSession = chatHistoryService.createNewSession();
-    setCurrentSessionId(newSession.id);
-    loadChatSessions();
-    
-    // Notify parent component about session change
-    if (onSessionChange) {
-      onSessionChange(newSession);
-    }
   };
 
   const handleSessionClick = (sessionId) => {
@@ -241,7 +228,7 @@ const Sidebar = ({ isOpen, onClose, currentUser, onUserSelect, onSessionChange, 
                             <div className="flex items-center space-x-2 text-xs text-gray-400">
                               <Clock className="w-3 h-3" />
                               <span>{formatSessionTime(session.updated_at)}</span>
-                              <span>•</span>
+                              <span>|</span>
                               <span>{session.messages.filter(m => m.type === 'user').length} messages</span>
                             </div>
                           </div>

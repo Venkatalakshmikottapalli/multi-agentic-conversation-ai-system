@@ -13,6 +13,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 import PyPDF2
 from io import BytesIO
+import json
 
 # Import configurations and services
 from config import settings
@@ -28,6 +29,7 @@ from schemas.api_schemas import (
     PaginatedResponse, HealthResponse, SystemAnalytics, UserAnalytics,
     SystemSettings, SettingsUpdate, SystemOverview
 )
+from models.crm_models import User, UserSession, Conversation, Message
 
 # Configure logging
 logging.basicConfig(
@@ -82,24 +84,102 @@ if os.path.exists("static"):
 # Database initialization is now handled in the lifespan context manager
 
 async def load_initial_data():
-    """Load the initial CSV data into the RAG system."""
+    """Load all data files from the data/ directory into the RAG system."""
     try:
         # Check if data already exists to prevent duplicates
         stats = rag_service.get_collection_stats()
         if stats.get("total_documents", 0) > 0:
-            logger.info(f"Initial data already loaded ({stats['total_documents']} documents), skipping CSV processing")
+            logger.info(f"Initial data already loaded ({stats['total_documents']} documents), skipping data processing")
             return
             
-        csv_file_path = "HackathonInternalKnowledgeBase.csv"
-        if os.path.exists(csv_file_path):
-            with open(csv_file_path, 'r', encoding='utf-8') as f:
-                csv_content = f.read()
+        data_directory = "data"
+        if not os.path.exists(data_directory):
+            logger.warning(f"Data directory '{data_directory}' not found")
+            return
             
-            # Process the CSV data
-            rag_service.process_csv_data(csv_content, "HackathonInternalKnowledgeBase.csv")
-            logger.info("Initial CSV data loaded successfully")
-        else:
-            logger.warning("Initial CSV file not found")
+        # Get all files from the data directory
+        data_files = []
+        for filename in os.listdir(data_directory):
+            file_path = os.path.join(data_directory, filename)
+            if os.path.isfile(file_path):
+                data_files.append((filename, file_path))
+        
+        if not data_files:
+            logger.warning("No files found in data directory")
+            return
+            
+        logger.info(f"Found {len(data_files)} files to process in data directory")
+        
+        # Process each file based on its type
+        loaded_count = 0
+        for filename, file_path in data_files:
+            try:
+                file_extension = filename.lower().split('.')[-1]
+                
+                if file_extension == 'csv':
+                    # Process CSV files
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        csv_content = f.read()
+                    rag_service.process_csv_data(csv_content, filename)
+                    logger.info(f"Loaded CSV file: {filename}")
+                    loaded_count += 1
+                    
+                elif file_extension == 'json':
+                    # Process JSON files
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        json_content = f.read()
+                        try:
+                            json_data = json.loads(json_content)
+                            # Convert JSON to readable text format
+                            readable_text = _json_to_readable_text(json_data, filename)
+                            rag_service.process_document(readable_text, filename, "application/json")
+                            logger.info(f"Loaded JSON file: {filename}")
+                            loaded_count += 1
+                        except json.JSONDecodeError:
+                            logger.warning(f"Invalid JSON format in file: {filename}")
+                            
+                elif file_extension == 'txt':
+                    # Process text files
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        text_content = f.read()
+                    rag_service.process_document(text_content, filename, "text/plain")
+                    logger.info(f"Loaded text file: {filename}")
+                    loaded_count += 1
+                    
+                elif file_extension == 'pdf':
+                    # Process PDF files
+                    try:
+                        with open(file_path, 'rb') as f:
+                            pdf_reader = PyPDF2.PdfReader(f)
+                            text_content = ""
+                            for page in pdf_reader.pages:
+                                text_content += page.extract_text() + "\n"
+                        
+                        if text_content.strip():
+                            rag_service.process_document(text_content, filename, "application/pdf")
+                            logger.info(f"Loaded PDF file: {filename}")
+                            loaded_count += 1
+                        else:
+                            logger.warning(f"No text content extracted from PDF: {filename}")
+                    except Exception as pdf_error:
+                        logger.error(f"Error processing PDF {filename}: {pdf_error}")
+                        
+                else:
+                    # Handle other file types as plain text
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        rag_service.process_document(content, filename, "text/plain")
+                        logger.info(f"Loaded file as text: {filename}")
+                        loaded_count += 1
+                    except UnicodeDecodeError:
+                        logger.warning(f"Skipping binary file: {filename}")
+                        
+            except Exception as file_error:
+                logger.error(f"Error processing file {filename}: {file_error}")
+                
+        logger.info(f"Successfully loaded {loaded_count} out of {len(data_files)} files from data directory")
+        
     except Exception as e:
         logger.error(f"Error loading initial data: {e}")
 
@@ -196,6 +276,219 @@ async def chat(message: ChatMessage):
         
     except Exception as e:
         logger.error(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Session Management Endpoints
+@app.post("/sessions/create", response_model=APIResponse)
+async def create_session(user_id: str):
+    """Create a new user session."""
+    try:
+        session_data = crm_service.create_user_session(user_id)
+        return APIResponse(
+            success=True,
+            message="Session created successfully",
+            data=session_data
+        )
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/validate/{session_token}", response_model=APIResponse)
+async def validate_session(session_token: str):
+    """Validate a session token."""
+    try:
+        user = crm_service.validate_session(session_token)
+        if user:
+            return APIResponse(
+                success=True,
+                message="Session is valid",
+                data={
+                    "user": user.to_dict(),
+                    "valid": True
+                }
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="Session is invalid or expired",
+                data={"valid": False}
+            )
+    except Exception as e:
+        logger.error(f"Error validating session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sessions/extend/{session_token}", response_model=APIResponse)
+async def extend_session(session_token: str, extend_hours: int = 24):
+    """Extend session expiration."""
+    try:
+        success = crm_service.extend_session(session_token, extend_hours)
+        if success:
+            return APIResponse(
+                success=True,
+                message=f"Session extended by {extend_hours} hours",
+                data={"extended": True}
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="Failed to extend session",
+                data={"extended": False}
+            )
+    except Exception as e:
+        logger.error(f"Error extending session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sessions/revoke/{session_token}", response_model=APIResponse)
+async def revoke_session(session_token: str):
+    """Revoke a session."""
+    try:
+        success = crm_service.revoke_session(session_token)
+        if success:
+            return APIResponse(
+                success=True,
+                message="Session revoked successfully",
+                data={"revoked": True}
+            )
+        else:
+            return APIResponse(
+                success=False,
+                message="Failed to revoke session",
+                data={"revoked": False}
+            )
+    except Exception as e:
+        logger.error(f"Error revoking session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/user/{user_id}", response_model=APIResponse)
+async def get_user_sessions(user_id: str, active_only: bool = True):
+    """Get all sessions for a user."""
+    try:
+        sessions = crm_service.get_user_sessions(user_id, active_only)
+        return APIResponse(
+            success=True,
+            message="Sessions retrieved successfully",
+            data={
+                "sessions": sessions,
+                "total": len(sessions)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting user sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sessions/cleanup", response_model=APIResponse)
+async def cleanup_expired_sessions():
+    """Clean up expired sessions."""
+    try:
+        count = crm_service.cleanup_expired_sessions()
+        return APIResponse(
+            success=True,
+            message=f"Cleaned up {count} expired sessions",
+            data={"cleaned_up": count}
+        )
+    except Exception as e:
+        logger.error(f"Error cleaning up sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sessions/create-for-all-users", response_model=APIResponse)
+async def create_sessions_for_all_users():
+    """Create sessions for all users who don't have them."""
+    try:
+        with get_db_context() as db:
+            users_without_sessions = []
+            sessions_created = 0
+            
+            # Get all active users
+            users = db.query(User).filter(User.is_active == True).all()
+            
+            for user in users:
+                # Check if user has any active sessions
+                existing_sessions = crm_service.get_user_sessions(user.id, active_only=True)
+                
+                if len(existing_sessions) == 0:
+                    try:
+                        session_data = crm_service.create_user_session(user.id)
+                        users_without_sessions.append({
+                            "user_id": user.id,
+                            "user_name": user.name,
+                            "session_created": session_data['session_id']
+                        })
+                        sessions_created += 1
+                        logger.info(f"Created session for user {user.id}: {session_data['session_id']}")
+                    except Exception as e:
+                        logger.error(f"Failed to create session for user {user.id}: {e}")
+                        users_without_sessions.append({
+                            "user_id": user.id,
+                            "user_name": user.name,
+                            "error": str(e)
+                        })
+            
+            return APIResponse(
+                success=True,
+                message=f"Created {sessions_created} sessions for users without sessions",
+                data={
+                    "sessions_created": sessions_created,
+                    "total_users": len(users),
+                    "details": users_without_sessions
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error creating sessions for all users: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/session-status", response_model=APIResponse)
+async def get_session_debug_status():
+    """Debug endpoint to check session table status."""
+    try:
+        with get_db_context() as db:
+            # Count users and sessions
+            total_users = db.query(User).count()
+            active_users = db.query(User).filter(User.is_active == True).count()
+            total_sessions = db.query(UserSession).count()
+            active_sessions = db.query(UserSession).filter(UserSession.is_active == True).count()
+            
+            # Get sample data
+            sample_users = db.query(User).limit(5).all()
+            sample_sessions = db.query(UserSession).limit(5).all()
+            
+            # Count conversations and messages
+            total_conversations = db.query(Conversation).count()
+            total_messages = db.query(Message).count()
+            
+            return APIResponse(
+                success=True,
+                message="Session debug information",
+                data={
+                    "database_stats": {
+                        "total_users": total_users,
+                        "active_users": active_users,
+                        "total_sessions": total_sessions,
+                        "active_sessions": active_sessions,
+                        "total_conversations": total_conversations,
+                        "total_messages": total_messages
+                    },
+                    "sample_users": [
+                        {
+                            "id": user.id,
+                            "name": user.name,
+                            "email": user.email,
+                            "is_active": user.is_active,
+                            "created_at": user.created_at.isoformat() if user.created_at else None
+                        } for user in sample_users
+                    ],
+                    "sample_sessions": [
+                        {
+                            "id": session.id,
+                            "user_id": session.user_id,
+                            "is_active": session.is_active,
+                            "created_at": session.created_at.isoformat() if session.created_at else None,
+                            "expires_at": session.expires_at.isoformat() if session.expires_at else None
+                        } for session in sample_sessions
+                    ]
+                }
+            )
+    except Exception as e:
+        logger.error(f"Error getting session debug status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def _json_to_readable_text(data, filename: str) -> str:
@@ -743,6 +1036,53 @@ async def clear_rag_collection():
         logger.error(f"Error clearing RAG collection: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/rag/documents", response_model=PaginatedResponse)
+async def list_documents(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=100)
+):
+    """List all documents in the RAG collection."""
+    try:
+        result = rag_service.list_documents(page, per_page)
+        
+        return PaginatedResponse(
+            success=True,
+            message="Documents retrieved successfully",
+            data=result["documents"],
+            total=result["total"],
+            page=result["page"],
+            per_page=result["per_page"],
+            pages=result["pages"]
+        )
+        
+    except Exception as e:
+        logger.error(f"Error listing documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/rag/documents/{filename}", response_model=APIResponse)
+async def delete_document(filename: str):
+    """Delete a specific document from the RAG collection."""
+    try:
+        # URL decode the filename in case it contains special characters
+        from urllib.parse import unquote
+        decoded_filename = unquote(filename)
+        
+        success = rag_service.remove_document_by_filename(decoded_filename)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return APIResponse(
+            success=True,
+            message=f"Document '{decoded_filename}' deleted successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document {filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Admin Analytics Endpoints
 @app.get("/admin/analytics/system", response_model=APIResponse)
 async def get_system_analytics():
@@ -758,6 +1098,173 @@ async def get_system_analytics():
         
     except Exception as e:
         logger.error(f"Error getting system analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/data/reload", response_model=APIResponse)
+async def reload_data():
+    """Manually reload all data from the data directory."""
+    try:
+        # Clear existing data first
+        rag_service.clear_collection()
+        logger.info("Cleared existing data collection")
+        
+        # Reload all data
+        await load_initial_data()
+        
+        # Get updated stats
+        stats = rag_service.get_collection_stats()
+        
+        return APIResponse(
+            success=True,
+            message="Data reloaded successfully",
+            data=stats
+        )
+    except Exception as e:
+        logger.error(f"Error reloading data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/data/force-load", response_model=APIResponse)
+async def force_load_data():
+    """Force load data from the data directory, even if data already exists."""
+    try:
+        # Temporarily force loading by clearing stats check
+        original_load_initial_data = load_initial_data
+        
+        async def force_load():
+            data_directory = "data"
+            if not os.path.exists(data_directory):
+                logger.warning(f"Data directory '{data_directory}' not found")
+                return
+                
+            # Get all files from the data directory
+            data_files = []
+            for filename in os.listdir(data_directory):
+                file_path = os.path.join(data_directory, filename)
+                if os.path.isfile(file_path):
+                    data_files.append((filename, file_path))
+            
+            if not data_files:
+                logger.warning("No files found in data directory")
+                return
+                
+            logger.info(f"Force loading {len(data_files)} files from data directory")
+            
+            # Process each file based on its type
+            loaded_count = 0
+            for filename, file_path in data_files:
+                try:
+                    file_extension = filename.lower().split('.')[-1]
+                    
+                    if file_extension == 'csv':
+                        # Process CSV files
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            csv_content = f.read()
+                        rag_service.process_csv_data(csv_content, filename)
+                        logger.info(f"Loaded CSV file: {filename}")
+                        loaded_count += 1
+                        
+                    elif file_extension == 'json':
+                        # Process JSON files
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            json_content = f.read()
+                            try:
+                                json_data = json.loads(json_content)
+                                # Convert JSON to readable text format
+                                readable_text = _json_to_readable_text(json_data, filename)
+                                rag_service.process_document(readable_text, filename, "application/json")
+                                logger.info(f"Loaded JSON file: {filename}")
+                                loaded_count += 1
+                            except json.JSONDecodeError:
+                                logger.warning(f"Invalid JSON format in file: {filename}")
+                                
+                    elif file_extension == 'txt':
+                        # Process text files
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            text_content = f.read()
+                        rag_service.process_document(text_content, filename, "text/plain")
+                        logger.info(f"Loaded text file: {filename}")
+                        loaded_count += 1
+                        
+                    elif file_extension == 'pdf':
+                        # Process PDF files
+                        try:
+                            with open(file_path, 'rb') as f:
+                                pdf_reader = PyPDF2.PdfReader(f)
+                                text_content = ""
+                                for page in pdf_reader.pages:
+                                    text_content += page.extract_text() + "\n"
+                            
+                            if text_content.strip():
+                                rag_service.process_document(text_content, filename, "application/pdf")
+                                logger.info(f"Loaded PDF file: {filename}")
+                                loaded_count += 1
+                            else:
+                                logger.warning(f"No text content extracted from PDF: {filename}")
+                        except Exception as pdf_error:
+                            logger.error(f"Error processing PDF {filename}: {pdf_error}")
+                            
+                    else:
+                        # Handle other file types as plain text
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                content = f.read()
+                            rag_service.process_document(content, filename, "text/plain")
+                            logger.info(f"Loaded file as text: {filename}")
+                            loaded_count += 1
+                        except UnicodeDecodeError:
+                            logger.warning(f"Skipping binary file: {filename}")
+                            
+                except Exception as file_error:
+                    logger.error(f"Error processing file {filename}: {file_error}")
+                    
+            logger.info(f"Successfully loaded {loaded_count} out of {len(data_files)} files from data directory")
+        
+        await force_load()
+        
+        # Get updated stats
+        stats = rag_service.get_collection_stats()
+        
+        return APIResponse(
+            success=True,
+            message="Data force-loaded successfully",
+            data=stats
+        )
+    except Exception as e:
+        logger.error(f"Error force loading data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/data/files", response_model=APIResponse)
+async def list_data_files():
+    """List all files in the data directory."""
+    try:
+        data_directory = "data"
+        if not os.path.exists(data_directory):
+            return APIResponse(
+                success=False,
+                message="Data directory not found"
+            )
+            
+        files = []
+        for filename in os.listdir(data_directory):
+            file_path = os.path.join(data_directory, filename)
+            if os.path.isfile(file_path):
+                file_stat = os.stat(file_path)
+                files.append({
+                    "filename": filename,
+                    "size": file_stat.st_size,
+                    "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
+                    "extension": filename.lower().split('.')[-1] if '.' in filename else 'unknown'
+                })
+        
+        return APIResponse(
+            success=True,
+            data={
+                "files": files,
+                "total_files": len(files)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error listing data files: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/analytics/user/{user_id}", response_model=APIResponse)

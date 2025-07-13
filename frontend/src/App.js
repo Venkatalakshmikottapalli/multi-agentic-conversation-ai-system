@@ -132,16 +132,6 @@ function App() {
                     </span>
                   </div>
                 )}
-                
-                {/* Current Session Info */}
-                {currentSession && (
-                  <div className="flex items-center space-x-2 bg-green-50 px-3 py-1 rounded-full">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-green-700">
-                      {currentSession.title || 'Active Session'}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
           </header>

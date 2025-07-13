@@ -164,6 +164,9 @@ class ChatAgent:
             # Ensure user exists in database
             user = self._ensure_user_exists(user_id)
             
+            # Ensure user session exists and is active
+            user_session_data = self._ensure_session_exists(user_id, session_id)
+            
             # Save user message
             self.conversation_manager.save_message(
                 session_id=session_id,
@@ -203,7 +206,8 @@ class ChatAgent:
                 metadata={
                     "agent_used": agent.name,
                     "rag_sources": sources,
-                    "user_info_extracted": user_info
+                    "user_info_extracted": user_info,
+                    "session_token": user_session_data.get("session_token") if user_session_data else None
                 }
             )
             
@@ -222,7 +226,8 @@ class ChatAgent:
                     "agent_used": agent.name,
                     "processing_time": processing_time,
                     "rag_documents_found": len(rag_context),
-                    "user_info_extracted": user_info
+                    "user_info_extracted": user_info,
+                    "session_info": user_session_data
                 },
                 "processing_time": processing_time
             }
@@ -316,25 +321,37 @@ class ChatAgent:
             Recent conversation history:
             {chr(10).join([f"{msg['role']}: {msg['content']}" for msg in history[-5:]])}
             
-            Extract the following information if mentioned:
-            - Name
-            - Email
-            - Phone number
-            - Company name
-            - Job title/role
-            - Preferences or interests
+            Extract the following information if mentioned and return as a JSON object with these EXACT keys:
+            - "name": Full name of the person
+            - "email": Email address
+            - "phone": Phone number
+            - "company": Company/organization name
+            - "role": Job title or role
+            - "preferences": Any other preferences or interests as a nested object
             
-            Return a JSON object with the extracted information. If no information is found, return an empty object.
+            IMPORTANT: Use exactly these keys. If no information is found, return an empty object {{}}.
+            
+            Example response:
+            {{
+                "name": "John Smith",
+                "email": "john@company.com",
+                "phone": "555-123-4567",
+                "company": "ABC Corp",
+                "role": "Manager",
+                "preferences": {{
+                    "interests": ["real estate", "technology"]
+                }}
+            }}
             """
             
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are an information extraction assistant. Return only valid JSON."},
+                    {"role": "system", "content": "You are an information extraction assistant. Return only valid JSON with the exact keys specified."},
                     {"role": "user", "content": extraction_prompt}
                 ],
                 temperature=0.1,
-                max_tokens=200
+                max_tokens=300
             )
             
             import json
@@ -357,27 +374,34 @@ class ChatAgent:
             with get_db_context() as db:
                 user = db.query(User).filter(User.id == user_id).first()
                 if user:
+                    # Update core fields with proper validation
                     if "name" in info and info["name"]:
-                        user.name = info["name"]
+                        user.name = str(info["name"]).strip()
                     if "email" in info and info["email"]:
-                        user.email = info["email"]
+                        user.email = str(info["email"]).strip().lower()
                     if "phone" in info and info["phone"]:
-                        user.phone = info["phone"]
+                        user.phone = str(info["phone"]).strip()
                     if "company" in info and info["company"]:
-                        user.company = info["company"]
+                        user.company = str(info["company"]).strip()
                     if "role" in info and info["role"]:
-                        user.role = info["role"]
+                        user.role = str(info["role"]).strip()
                     
-                    # Update preferences
+                    # Handle preferences properly
                     if not user.preferences:
                         user.preferences = {}
                     
+                    # Add preferences from the extraction
+                    if "preferences" in info and isinstance(info["preferences"], dict):
+                        user.preferences.update(info["preferences"])
+                    
+                    # Add any other fields to preferences (for backward compatibility)
                     for key, value in info.items():
-                        if key not in ["name", "email", "phone", "company", "role"]:
+                        if key not in ["name", "email", "phone", "company", "role", "preferences"] and value:
                             user.preferences[key] = value
                     
                     user.updated_at = datetime.utcnow()
                     db.commit()
+                    logger.info(f"User {user_id} updated - Name: {user.name}, Email: {user.email}, Company: {user.company}")
                     
         except Exception as e:
             logger.error(f"Error updating user info: {e}")
@@ -484,6 +508,38 @@ class ChatAgent:
         except Exception as e:
             logger.error(f"Error getting conversation ID: {e}")
             return ""
+
+    def _ensure_session_exists(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+        """Ensure user session exists in the database."""
+        try:
+            from services.crm_service import crm_service
+            
+            # Check if a valid session already exists for this user
+            existing_sessions = crm_service.get_user_sessions(user_id, active_only=True)
+            
+            # Look for session with matching session_id pattern or create new one
+            matching_session = None
+            for session in existing_sessions:
+                # Check if the session token or ID matches our session pattern
+                if session_id in str(session.get('session_token', '')) or session_id in str(session.get('id', '')):
+                    # Extend existing session
+                    crm_service.extend_session(session['session_token'], 24)
+                    matching_session = session
+                    logger.info(f"Extended existing session for user {user_id}: {session['id']}")
+                    break
+            
+            if not matching_session:
+                # Create new session for user
+                session_data = crm_service.create_user_session(user_id, expires_in_hours=24)
+                logger.info(f"Created new UserSession for user {user_id}: {session_data['session_id']}")
+                return session_data
+            else:
+                return matching_session
+                
+        except Exception as e:
+            logger.error(f"Error ensuring session exists for user {user_id}: {e}")
+            # Don't fail the chat if session creation fails
+            return None
 
 # Global chat agent instance
 chat_agent = ChatAgent() 

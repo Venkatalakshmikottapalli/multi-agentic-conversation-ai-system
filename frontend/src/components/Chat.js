@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, User, Bot, Loader2, Plus, AlertCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { chatAPI } from '../services/api';
 import sessionManager from '../services/sessionManager';
 import chatHistoryService from '../services/chatHistoryService';
@@ -42,7 +44,65 @@ const MessageBubble = React.memo(({ message }) => {
           )}
           
           <div className="flex-1">
-            <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+            <div className="text-sm prose prose-sm max-w-none">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  code: ({ node, inline, className, children, ...props }) => {
+                    return inline ? (
+                      <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono" {...props}>
+                        {children}
+                      </code>
+                    ) : (
+                      <pre className="bg-gray-100 p-2 rounded overflow-x-auto">
+                        <code className="text-xs font-mono" {...props}>
+                          {children}
+                        </code>
+                      </pre>
+                    );
+                  },
+                  ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
+                  li: ({ children }) => <li className="mb-1">{children}</li>,
+                  blockquote: ({ children }) => (
+                    <blockquote className="border-l-4 border-gray-300 pl-3 italic my-2">
+                      {children}
+                    </blockquote>
+                  ),
+                  h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
+                  h4: ({ children }) => <h4 className="text-sm font-semibold mb-1">{children}</h4>,
+                  h5: ({ children }) => <h5 className="text-sm font-semibold mb-1">{children}</h5>,
+                  h6: ({ children }) => <h6 className="text-sm font-semibold mb-1">{children}</h6>,
+                  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  table: ({ children }) => (
+                    <table className="border-collapse border border-gray-300 text-xs w-full my-2">
+                      {children}
+                    </table>
+                  ),
+                  th: ({ children }) => (
+                    <th className="border border-gray-300 px-2 py-1 bg-gray-100 font-semibold text-left">
+                      {children}
+                    </th>
+                  ),
+                  td: ({ children }) => (
+                    <td className="border border-gray-300 px-2 py-1">
+                      {children}
+                    </td>
+                  ),
+                  a: ({ href, children }) => (
+                    <a href={href} className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
             
             {message.metadata && (
               <div className="mt-2 text-xs opacity-75">
@@ -112,17 +172,7 @@ const Chat = ({ currentUser, onUserSelect, currentSession, onSessionUpdate }) =>
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Load session when component mounts or currentSession changes
-  useEffect(() => {
-    loadCurrentSession();
-  }, [currentSession]);
-
-  // Only scroll when messages actually change, not on every render
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  const loadCurrentSession = () => {
+  const loadCurrentSession = useCallback(() => {
     let session;
     
     if (currentSession) {
@@ -142,7 +192,17 @@ const Chat = ({ currentUser, onUserSelect, currentSession, onSessionUpdate }) =>
         sessionManager.loadUserForSession(session.user_id);
       }
     }
-  };
+  }, [currentSession, currentUser]);
+
+  // Load session when component mounts or currentSession changes
+  useEffect(() => {
+    loadCurrentSession();
+  }, [loadCurrentSession]);
+
+  // Only scroll when messages actually change, not on every render
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
   const handleSendMessage = async (e) => {
     e.preventDefault();

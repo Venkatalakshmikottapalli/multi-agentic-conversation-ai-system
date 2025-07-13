@@ -275,28 +275,76 @@ class RAGService:
             if pd.notna(row.get('Monthly Rent')):
                 description += f". Monthly rent: {row.get('Monthly Rent')}"
             
-            # Add broker information
-            if pd.notna(row.get('Associate 1')):
-                description += f". Primary broker: {row.get('Associate 1')}"
+            if pd.notna(row.get('GCI On 3 Years')):
+                description += f". GCI on 3 years: {row.get('GCI On 3 Years')}"
             
+            # Add broker information
             if pd.notna(row.get('BROKER Email ID')):
                 description += f". Broker email: {row.get('BROKER Email ID')}"
             
-            # Add additional associates
+            # Add associates information
             associates = []
-            for i in range(2, 5):
+            for i in range(1, 5):
                 associate_col = f'Associate {i}'
                 if pd.notna(row.get(associate_col)):
                     associates.append(row.get(associate_col))
             
             if associates:
-                description += f". Additional associates: {', '.join(associates)}"
+                primary_associate = associates[0] if associates else None
+                if primary_associate:
+                    description += f". Primary agent: {primary_associate}"
+                
+                if len(associates) > 1:
+                    additional_associates = associates[1:]
+                    description += f". Additional associates: {', '.join(additional_associates)}"
             
             return description
             
         except Exception as e:
             logger.error(f"Error creating property description: {e}")
             return f"Property data: {row.to_dict()}"
+    
+    def list_documents(self, page: int = 1, per_page: int = 10) -> Dict[str, Any]:
+        """List all active documents with pagination."""
+        try:
+            from database import get_db_context
+            from models.crm_models import Document
+            
+            with get_db_context() as db:
+                # Get total count
+                total = db.query(Document).filter(Document.is_active == True).count()
+                
+                # Get paginated documents
+                documents = (
+                    db.query(Document)
+                    .filter(Document.is_active == True)
+                    .order_by(Document.created_at.desc())
+                    .offset((page - 1) * per_page)
+                    .limit(per_page)
+                    .all()
+                )
+                
+                # Convert to dicts
+                docs_list = [doc.to_dict() for doc in documents]
+                
+                return {
+                    "documents": docs_list,
+                    "total": total,
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": (total + per_page - 1) // per_page
+                }
+                
+        except Exception as e:
+            logger.error(f"Error listing documents: {e}")
+            return {
+                "documents": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page,
+                "pages": 0,
+                "error": str(e)
+            }
     
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get statistics about the document collection."""
@@ -313,8 +361,8 @@ class RAGService:
                 # Count unique documents
                 total_documents = db.query(Document).filter(Document.is_active == True).count()
                 
-                # Calculate total collection size
-                collection_size = db.query(func.sum(Document.file_size)).scalar() or 0
+                # Calculate total collection size (only active documents)
+                collection_size = db.query(func.sum(Document.file_size)).filter(Document.is_active == True).scalar() or 0
                 
                 # Get last updated timestamp
                 last_document = db.query(Document).filter(Document.is_active == True).order_by(Document.indexed_at.desc()).first()

@@ -112,6 +112,45 @@ export const crmAPI = {
   },
 };
 
+// Session Management API
+export const sessionAPI = {
+  createSession: async (userId) => {
+    const response = await api.post('/sessions/create', null, {
+      params: { user_id: userId },
+    });
+    return response.data;
+  },
+
+  validateSession: async (sessionToken) => {
+    const response = await api.get(`/sessions/validate/${sessionToken}`);
+    return response.data;
+  },
+
+  extendSession: async (sessionToken, extendHours = 24) => {
+    const response = await api.post(`/sessions/extend/${sessionToken}`, null, {
+      params: { extend_hours: extendHours },
+    });
+    return response.data;
+  },
+
+  revokeSession: async (sessionToken) => {
+    const response = await api.post(`/sessions/revoke/${sessionToken}`);
+    return response.data;
+  },
+
+  getUserSessions: async (userId, activeOnly = true) => {
+    const response = await api.get(`/sessions/user/${userId}`, {
+      params: { active_only: activeOnly },
+    });
+    return response.data;
+  },
+
+  cleanupExpiredSessions: async () => {
+    const response = await api.post('/sessions/cleanup');
+    return response.data;
+  },
+};
+
 // Document/RAG API
 export const docAPI = {
   uploadDocuments: async (files) => {
@@ -135,6 +174,20 @@ export const docAPI = {
 
   clearRagData: async () => {
     const response = await api.delete('/rag/clear');
+    return response.data;
+  },
+
+  getDocuments: async (page = 1, perPage = 10) => {
+    const response = await api.get('/rag/documents', {
+      params: { page, per_page: perPage },
+    });
+    return response.data;
+  },
+
+  deleteDocument: async (filename) => {
+    // URL encode the filename to handle special characters
+    const encodedFilename = encodeURIComponent(filename);
+    const response = await api.delete(`/rag/documents/${encodedFilename}`);
     return response.data;
   },
 };

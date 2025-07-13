@@ -2,10 +2,11 @@ import logging
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from datetime import datetime
-from models.crm_models import User, Conversation, Message
+from datetime import datetime, timedelta
+from models.crm_models import User, Conversation, Message, UserSession
 from database import get_db_context
 from schemas.api_schemas import UserCreate, UserUpdate
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -520,7 +521,6 @@ class CRMService:
                 last_conversation = max(conv.updated_at for conv in conversations) if conversations else None
                 
                 # User activity trend (conversations per day for last 30 days)
-                from datetime import timedelta
                 activity_trend = []
                 if conversations:
                     # Simple activity trend - count conversations per day
@@ -615,6 +615,182 @@ class CRMService:
         except Exception as e:
             logger.error(f"Error getting user activity trend: {e}")
             return []
+
+    def create_user_session(self, user_id: str, expires_in_hours: int = 24) -> Dict[str, Any]:
+        """Create a new user session with token."""
+        try:
+            with get_db_context() as db:
+                # Check if user exists
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    raise ValueError(f"User {user_id} not found")
+                
+                # Deactivate existing sessions for this user
+                existing_sessions = db.query(UserSession).filter(
+                    UserSession.user_id == user_id,
+                    UserSession.is_active == True
+                ).all()
+                
+                for session in existing_sessions:
+                    session.is_active = False
+                
+                # Create new session
+                session_token = secrets.token_urlsafe(32)
+                expires_at = datetime.utcnow() + timedelta(hours=expires_in_hours)
+                
+                user_session = UserSession(
+                    user_id=user_id,
+                    session_token=session_token,
+                    expires_at=expires_at,
+                    is_active=True
+                )
+                
+                db.add(user_session)
+                db.commit()
+                db.refresh(user_session)
+                
+                logger.info(f"Created session for user {user_id}: {user_session.id}")
+                
+                return {
+                    "session_id": user_session.id,
+                    "session_token": session_token,
+                    "user_id": user_id,
+                    "expires_at": expires_at.isoformat(),
+                    "created_at": user_session.created_at.isoformat()
+                }
+                
+        except Exception as e:
+            logger.error(f"Error creating user session: {e}")
+            raise
+    
+    def get_user_session(self, session_token: str) -> Optional[Dict[str, Any]]:
+        """Get user session by token."""
+        try:
+            with get_db_context() as db:
+                user_session = db.query(UserSession).filter(
+                    UserSession.session_token == session_token,
+                    UserSession.is_active == True,
+                    UserSession.expires_at > datetime.utcnow()
+                ).first()
+                
+                if user_session:
+                    return {
+                        "session_id": user_session.id,
+                        "user_id": user_session.user_id,
+                        "session_token": user_session.session_token,
+                        "expires_at": user_session.expires_at.isoformat(),
+                        "created_at": user_session.created_at.isoformat()
+                    }
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting user session: {e}")
+            return None
+    
+    def validate_session(self, session_token: str) -> Optional[User]:
+        """Validate session token and return user if valid."""
+        try:
+            with get_db_context() as db:
+                user_session = db.query(UserSession).filter(
+                    UserSession.session_token == session_token,
+                    UserSession.is_active == True,
+                    UserSession.expires_at > datetime.utcnow()
+                ).first()
+                
+                if user_session:
+                    user = db.query(User).filter(User.id == user_session.user_id).first()
+                    return user
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error validating session: {e}")
+            return None
+    
+    def extend_session(self, session_token: str, extend_hours: int = 24) -> bool:
+        """Extend session expiration time."""
+        try:
+            with get_db_context() as db:
+                user_session = db.query(UserSession).filter(
+                    UserSession.session_token == session_token,
+                    UserSession.is_active == True
+                ).first()
+                
+                if user_session:
+                    user_session.expires_at = datetime.utcnow() + timedelta(hours=extend_hours)
+                    db.commit()
+                    logger.info(f"Extended session {user_session.id} by {extend_hours} hours")
+                    return True
+                
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error extending session: {e}")
+            return False
+    
+    def revoke_session(self, session_token: str) -> bool:
+        """Revoke/deactivate a session."""
+        try:
+            with get_db_context() as db:
+                user_session = db.query(UserSession).filter(
+                    UserSession.session_token == session_token,
+                    UserSession.is_active == True
+                ).first()
+                
+                if user_session:
+                    user_session.is_active = False
+                    db.commit()
+                    logger.info(f"Revoked session {user_session.id}")
+                    return True
+                
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error revoking session: {e}")
+            return False
+    
+    def get_user_sessions(self, user_id: str, active_only: bool = True) -> List[Dict[str, Any]]:
+        """Get all sessions for a user."""
+        try:
+            with get_db_context() as db:
+                query = db.query(UserSession).filter(UserSession.user_id == user_id)
+                
+                if active_only:
+                    query = query.filter(
+                        UserSession.is_active == True,
+                        UserSession.expires_at > datetime.utcnow()
+                    )
+                
+                sessions = query.order_by(desc(UserSession.created_at)).all()
+                
+                return [session.to_dict() for session in sessions]
+                
+        except Exception as e:
+            logger.error(f"Error getting user sessions: {e}")
+            return []
+    
+    def cleanup_expired_sessions(self) -> int:
+        """Clean up expired sessions."""
+        try:
+            with get_db_context() as db:
+                expired_sessions = db.query(UserSession).filter(
+                    UserSession.expires_at < datetime.utcnow(),
+                    UserSession.is_active == True
+                ).all()
+                
+                count = len(expired_sessions)
+                
+                for session in expired_sessions:
+                    session.is_active = False
+                
+                db.commit()
+                logger.info(f"Cleaned up {count} expired sessions")
+                return count
+                
+        except Exception as e:
+            logger.error(f"Error cleaning up expired sessions: {e}")
+            return 0
 
 # Global CRM service instance
 crm_service = CRMService() 
