@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { Send, User, Bot, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { chatAPI } from '../services/api';
 import sessionManager from '../services/sessionManager';
@@ -42,8 +43,9 @@ const MessageBubble = React.memo(({ message }) => {
           )}
           
           <div className="flex-1">
-            <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-            
+            <div className="text-sm whitespace-pre-wrap">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
             {message.metadata && (
               <div className="mt-2 text-xs opacity-75">
                 Agent: {message.metadata.agent_used}
@@ -54,7 +56,6 @@ const MessageBubble = React.memo(({ message }) => {
                 )}
               </div>
             )}
-            
             {message.sources && message.sources.length > 0 && (
               <div className="mt-2 text-xs">
                 <div className="font-medium">Sources:</div>
@@ -65,7 +66,6 @@ const MessageBubble = React.memo(({ message }) => {
                 ))}
               </div>
             )}
-            
             <div className="mt-2 text-xs opacity-50">
               {formatTime(message.timestamp)}
             </div>
